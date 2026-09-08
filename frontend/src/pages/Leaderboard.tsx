@@ -183,6 +183,8 @@ export default function Leaderboard() {
               <th className="px-4 py-3 text-center">W</th>
               <th className="px-4 py-3 text-center">L</th>
               <th className="px-4 py-3 text-center">Win %</th>
+              <th className="px-4 py-3 text-center">Points</th>
+              <th className="px-4 py-3 text-center">Loss pts</th>
               <th className="px-4 py-3 text-center">Point diff</th>
             </tr>
           </thead>
@@ -204,6 +206,8 @@ export default function Leaderboard() {
                 <td className="px-4 py-3 text-center font-bold text-emerald-300">{r.wins}</td>
                 <td className="px-4 py-3 text-center font-bold text-red-300">{r.losses}</td>
                 <td className="px-4 py-3 text-center text-white/80">{r.winPct}%</td>
+                <td className="px-4 py-3 text-center text-white/80">{r.pointsFor}</td>
+                <td className="px-4 py-3 text-center text-orange-200">{r.lossPoints}</td>
                 <td className="px-4 py-3 text-center text-white/80">{r.pointDiff > 0 ? `+${r.pointDiff}` : r.pointDiff}</td>
               </tr>
             ))}

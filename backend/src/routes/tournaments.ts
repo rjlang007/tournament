@@ -1,7 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { computeLeaderboard, countUnfinishedGames, detectPodiumTies, LeaderboardRow } from "../lib/leaderboard";
-import { createTiebreakGame } from "../lib/tiebreak";
 import { broadcastTournamentUpdate } from "../socket";
 import { attachUser, AuthedRequest, canManageTournament } from "../lib/auth";
 
@@ -127,8 +126,8 @@ tournamentsRouter.get("/:id/summary.csv", async (req: AuthedRequest, res) => {
     ["Finished At", tournament.resultsFinalizedAt?.toISOString() ?? ""].map(csvCell).join(","),
     "",
     ["Final Rankings", "", "", "", "", "", ""].map(csvCell).join(","),
-    ["Rank", "Placement", "Player", "Skill Level", "Games Played", "Wins", "Losses", "Win %", "Point Differential"].map(csvCell).join(","),
-    ...standings.map((row, index) => [index + 1, placement(index + 1), row.name, row.skillLevel, row.gamesPlayed, row.wins, row.losses, row.winPct, row.pointDiff].map(csvCell).join(",")),
+    ["Rank", "Placement", "Player", "Skill Level", "Games Played", "Wins", "Losses", "Win %", "Points For", "Points Against", "Loss-game Points", "Point Differential"].map(csvCell).join(","),
+    ...standings.map((row, index) => [index + 1, placement(index + 1), row.name, row.skillLevel, row.gamesPlayed, row.wins, row.losses, row.winPct, row.pointsFor, row.pointsAgainst, row.lossPoints, row.pointDiff].map(csvCell).join(",")),
     "",
     ["Recorded Games", "", "", "", "", "", ""].map(csvCell).join(","),
     ["Match", "Status", "Team A", "Team B", "Score A", "Score B", "Winner"].map(csvCell).join(","),
@@ -181,10 +180,12 @@ tournamentsRouter.post("/:id/extend", async (req: AuthedRequest, res) => {
   if (!(await canManageTournament(req, req.params.id))) return res.status(403).json({ error: "You can only edit tournaments you own." });
   const { newEndTime } = req.body as { newEndTime?: string };
   if (!newEndTime) return res.status(400).json({ error: "newEndTime is required" });
+  const endDate = new Date(newEndTime);
+  if (Number.isNaN(endDate.getTime())) return res.status(400).json({ error: "newEndTime must be a valid date." });
   const tournament = await prisma.tournament.update({
     where: { id: req.params.id },
     data: {
-      scheduledEnd: new Date(newEndTime),
+      scheduledEnd: endDate,
       resultsFinalizedAt: null,
       status: "ACTIVE",
     },
@@ -226,23 +227,4 @@ tournamentsRouter.post("/:id/finalize", async (req: AuthedRequest, res) => {
   });
   broadcastTournamentUpdate(tournament.id, "tournament:changed");
   res.json(tournament);
-});
-
-// Creates a one-off game between the given (tied) players to break a
-// podium tie flagged by /finalize/check. The tournament is NOT finalized
-// by this call - the operator runs the game like any other from Court
-// Control, then hits "Finalize now" again once it's finished.
-tournamentsRouter.post("/:id/finalize/tiebreak-game", async (req: AuthedRequest, res) => {
-  if (!(await canManageTournament(req, req.params.id))) return res.status(403).json({ error: "You can only edit tournaments you own." });
-  const { playerIds } = req.body as { playerIds?: string[] };
-  if (!playerIds || playerIds.length < 2) {
-    return res.status(400).json({ error: "at least 2 playerIds are required" });
-  }
-  try {
-    const game = await createTiebreakGame(req.params.id, playerIds);
-    broadcastTournamentUpdate(req.params.id, "games:changed");
-    return res.status(201).json(game);
-  } catch (error) {
-    return res.status(400).json({ error: error instanceof Error ? error.message : "Unable to create the tiebreaker game." });
-  }
 });

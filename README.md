@@ -18,8 +18,8 @@ accounts, player accounts, community features, live matchmaking, and results.
 - Per-court enable/disable, supports 2+ courts
 - Staff court control: manual Start / Pause / Resume / Finish + editable game timer
 - Live kiosk display (Now Playing / Up Next / Waiting pool) via Socket.IO — this is the public "who's playing next / who's winning" screen
-- Leaderboard ranked by wins, with games-played count, for random-pairing tournaments
-- Tie-aware tournament finalization with balanced tiebreak games or manual ordering
+- Leaderboard ranked by wins, loss-game points, total points, and point differential, with games-played count and live updates
+- Open-play tournament finalization with shared placements for exact ties and arrival-aware matchmaking
 - Congratulatory final-results page with PNG and JPEG downloads for everyone
 - Editable rosters/brackets for substitutions (player leaves, emergency, etc.)
 

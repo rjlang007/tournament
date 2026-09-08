@@ -134,6 +134,9 @@ export type LeaderboardRow = {
   gamesPlayed: number;
   winPct: number;
   pointDiff: number;
+  pointsFor: number;
+  pointsAgainst: number;
+  lossPoints: number;
 };
 
 export type TieGroup = {

@@ -9,6 +9,9 @@ export type LeaderboardRow = {
   gamesPlayed: number;
   winPct: number;
   pointDiff: number;
+  pointsFor: number;
+  pointsAgainst: number;
+  lossPoints: number;
 };
 
 const UNFINISHED_GAME_STATUSES = ["UPCOMING", "READY", "IN_PROGRESS", "PAUSED"] as const;
@@ -39,6 +42,9 @@ export async function computeLeaderboard(tournamentId: string): Promise<Leaderbo
     let wins = 0;
     let losses = 0;
     let pointDiff = 0;
+    let pointsFor = 0;
+    let pointsAgainst = 0;
+    let lossPoints = 0;
     for (const gp of player.gamePlayers) {
       if (gp.game.status !== "FINISHED" || !gp.game.winningTeam) continue;
       if (gp.game.winningTeam === gp.team) wins++;
@@ -46,6 +52,9 @@ export async function computeLeaderboard(tournamentId: string): Promise<Leaderbo
       if (gp.game.scoreA !== null && gp.game.scoreB !== null) {
         const ownScore = gp.team === "A" ? gp.game.scoreA : gp.game.scoreB;
         const opponentScore = gp.team === "A" ? gp.game.scoreB : gp.game.scoreA;
+        pointsFor += ownScore;
+        pointsAgainst += opponentScore;
+        if (gp.game.winningTeam !== gp.team) lossPoints += ownScore;
         pointDiff += Math.max(-5, Math.min(5, ownScore - opponentScore));
       }
     }
@@ -59,10 +68,17 @@ export async function computeLeaderboard(tournamentId: string): Promise<Leaderbo
       gamesPlayed,
       winPct: gamesPlayed > 0 ? Math.round((wins / gamesPlayed) * 1000) / 10 : 0,
       pointDiff,
+      pointsFor,
+      pointsAgainst,
+      lossPoints,
     };
   });
 
-  leaderboard.sort((a, b) => b.wins - a.wins || b.winPct - a.winPct || a.losses - b.losses || b.pointDiff - a.pointDiff);
+  leaderboard.sort((a, b) => {
+    const aLossPoints = a.losses > 0 ? a.lossPoints : 0;
+    const bLossPoints = b.losses > 0 ? b.lossPoints : 0;
+    return b.wins - a.wins || b.winPct - a.winPct || a.losses - b.losses || bLossPoints - aLossPoints || b.pointDiff - a.pointDiff;
+  });
   return leaderboard;
 }
 
@@ -94,6 +110,7 @@ export function detectPodiumTies(standings: LeaderboardRow[]): TieGroup[] {
       standings[j].wins === standings[i].wins &&
       standings[j].winPct === standings[i].winPct &&
       standings[j].losses === standings[i].losses &&
+      standings[j].lossPoints === standings[i].lossPoints &&
       standings[j].pointDiff === standings[i].pointDiff
     ) {
       j++;

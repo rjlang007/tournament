@@ -355,8 +355,8 @@ export default function CourtControl() {
       </div>
 
       {scheduleOpen && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setScheduleOpen(false)}>
-          <div className="bg-neutral-950 border border-white/10 rounded-2xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="mobile-modal-shell" onClick={() => setScheduleOpen(false)}>
+          <div className="mobile-modal-card max-w-sm" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-display text-lg font-bold mb-4">Tournament schedule</h3>
             <label className="text-xs uppercase tracking-wide text-white/50">Start</label>
             <input
@@ -372,7 +372,7 @@ export default function CourtControl() {
               onChange={(e) => setScheduleEnd(e.target.value)}
               className="w-full mt-1 mb-6 bg-white/5 border border-white/10 rounded-lg px-3 py-2"
             />
-            <div className="flex gap-2 justify-end">
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button onClick={() => setScheduleOpen(false)} className="px-4 py-2 rounded-lg text-sm text-white/60">Cancel</button>
               <button onClick={saveSchedule} className="bg-ball text-neutral-900 font-display font-bold rounded-lg px-4 py-2 text-sm">Save</button>
             </div>
@@ -405,9 +405,9 @@ export default function CourtControl() {
       </section>
 
       {finalizeCheck && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={closeFinalize}>
+        <div className="mobile-modal-shell" onClick={closeFinalize}>
           <div
-            className="bg-neutral-950 border border-white/10 rounded-2xl p-6 w-full max-w-md"
+            className="mobile-modal-card max-w-md"
             onClick={(e) => e.stopPropagation()}
           >
             {!resolvingTie ? (
@@ -442,14 +442,14 @@ export default function CourtControl() {
                   </div>
                 ))}
 
-                <div className="flex justify-between items-center mt-4">
-                  <button onClick={closeFinalize} className="text-xs text-white/40 hover:text-white/70">
+                <div className="mt-4 flex flex-col-reverse gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <button onClick={closeFinalize} className="min-h-11 rounded-lg px-3 text-xs text-white/40 hover:text-white/70">
                     Cancel
                   </button>
                   <button
                     disabled={finalizeBusy || finalizeCheck.unfinishedGames > 0}
                     onClick={finalizeAnyway}
-                    className="bg-red-500/80 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50"
+                    className="min-h-11 rounded-lg bg-red-500/80 px-4 py-2 text-sm font-semibold disabled:opacity-50"
                   >
                     Finalize results
                   </button>
@@ -521,8 +521,8 @@ export default function CourtControl() {
       )}
 
       {finishingGame && (
-        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setFinishingGame(null)}>
-          <div className="bg-neutral-950 border border-white/10 rounded-2xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+        <div className="mobile-modal-shell" onClick={() => setFinishingGame(null)}>
+          <div className="mobile-modal-card max-w-sm" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-display text-lg font-bold mb-1">Who won?</h3>
             <p className="text-xs text-white/40 mb-4">Enter the final score so standings can separate equal win records fairly.</p>
             <div className="grid grid-cols-2 gap-3 mb-4">
@@ -545,8 +545,8 @@ export default function CourtControl() {
                 <TeamNames game={finishingGame} team="B" />
               </button>
             </div>
-            <div className="flex justify-end items-center">
-              <button onClick={() => setFinishingGame(null)} className="text-xs text-white/40 hover:text-white/70">
+            <div className="flex items-center justify-end">
+              <button onClick={() => setFinishingGame(null)} className="min-h-11 rounded-lg px-3 text-xs text-white/40 hover:text-white/70">
                 Cancel
               </button>
             </div>
@@ -561,14 +561,14 @@ export default function CourtControl() {
         </div>
       )}
 
-      <div className="flex gap-2 mb-6">
+      <div className="mb-6 flex flex-col gap-2 sm:flex-row">
         <input
           value={newCourtLabel}
           onChange={(e) => setNewCourtLabel(e.target.value)}
           placeholder="Court label e.g. Court 3"
-          className="bg-white/5 border border-white/10 rounded-lg px-3 py-2"
+          className="min-w-0 flex-1 bg-white/5 border border-white/10 rounded-lg px-3 py-2"
         />
-        <button onClick={addCourt} className="bg-white/10 rounded-lg px-4 py-2 text-sm">+ Add court</button>
+        <button onClick={addCourt} className="min-h-11 rounded-lg bg-white/10 px-4 py-2 text-sm">+ Add court</button>
       </div>
 
       <div className="grid md:grid-cols-2 gap-4">
