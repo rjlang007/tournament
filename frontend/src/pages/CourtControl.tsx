@@ -137,6 +137,10 @@ export default function CourtControl() {
 
   const confirmFinish = async (winningTeam: "A" | "B") => {
     if (!finishingGame) return;
+    if (scoreA.trim() === "" || scoreB.trim() === "") {
+      window.alert("Enter both Team A and Team B scores before selecting the winner.");
+      return;
+    }
     const finalScoreA = Number(scoreA);
     const finalScoreB = Number(scoreB);
     if (!Number.isInteger(finalScoreA) || !Number.isInteger(finalScoreB) || finalScoreA < 0 || finalScoreB < 0 || finalScoreA === finalScoreB) {
@@ -524,22 +528,24 @@ export default function CourtControl() {
         <div className="mobile-modal-shell" onClick={() => setFinishingGame(null)}>
           <div className="mobile-modal-card max-w-sm" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-display text-lg font-bold mb-1">Who won?</h3>
-            <p className="text-xs text-white/40 mb-4">Enter the final score so standings can separate equal win records fairly.</p>
+            <p className="text-xs text-white/40 mb-4">Enter both final scores. The team with the higher score must be selected as the winner.</p>
             <div className="grid grid-cols-2 gap-3 mb-4">
-              <label className="text-xs text-white/50">Team A score<input type="number" min="0" value={scoreA} onChange={(event) => setScoreA(event.target.value)} className="field mt-1" /></label>
-              <label className="text-xs text-white/50">Team B score<input type="number" min="0" value={scoreB} onChange={(event) => setScoreB(event.target.value)} className="field mt-1" /></label>
+              <label className="text-xs text-white/50">Team A score<input required type="number" min="0" value={scoreA} onChange={(event) => setScoreA(event.target.value)} className="field mt-1" /></label>
+              <label className="text-xs text-white/50">Team B score<input required type="number" min="0" value={scoreB} onChange={(event) => setScoreB(event.target.value)} className="field mt-1" /></label>
             </div>
             <div className="grid grid-cols-2 gap-3 mb-3">
               <button
+                disabled={!scoreA.trim() || !scoreB.trim()}
                 onClick={() => confirmFinish("A")}
-                className="rounded-xl border border-white/10 bg-white/5 hover:bg-ball/10 hover:border-ball p-4 text-left"
+                className="rounded-xl border border-white/10 bg-white/5 p-4 text-left hover:bg-ball/10 hover:border-ball disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <div className="text-xs text-white/40 mb-1">Team A</div>
                 <TeamNames game={finishingGame} team="A" />
               </button>
               <button
+                disabled={!scoreA.trim() || !scoreB.trim()}
                 onClick={() => confirmFinish("B")}
-                className="rounded-xl border border-white/10 bg-white/5 hover:bg-ball/10 hover:border-ball p-4 text-left"
+                className="rounded-xl border border-white/10 bg-white/5 p-4 text-left hover:bg-ball/10 hover:border-ball disabled:cursor-not-allowed disabled:opacity-40"
               >
                 <div className="text-xs text-white/40 mb-1">Team B</div>
                 <TeamNames game={finishingGame} team="B" />
