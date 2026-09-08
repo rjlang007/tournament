@@ -48,9 +48,19 @@ export default function PlatformAdmin() {
   return (
     <div className="flex min-h-screen flex-col px-4 py-8 sm:px-6">
       <div className="mx-auto max-w-6xl space-y-6">
-        <header className="flex flex-wrap items-end justify-between gap-4">
-          <div><div className="text-[10px] uppercase tracking-[0.25em] text-ball/80">Platform owner</div><h1 className="mt-2 font-display text-4xl font-bold text-white">Account Console</h1><p className="mt-2 text-sm text-white/55">Create customer administrator accounts and player accounts.</p></div>
-          <div className="flex gap-2"><Link to="/" className="secondary-button">Tournaments</Link><button onClick={() => logout()} className="secondary-button">Sign out</button></div>
+        <header className="glass-panel tournament-nav sticky top-2 z-20 flex min-w-0 flex-col gap-3 px-3 py-3 sm:top-4 sm:gap-4 sm:px-6 sm:py-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-ball/20 text-xl shadow-inner shadow-ball/30 ring-1 ring-ball/30">🏓</div>
+            <div>
+              <div className="font-display text-xl font-bold tracking-wide text-ball">Dink Board</div>
+              <div className="text-[10px] uppercase tracking-[0.24em] text-white/45">Platform Console</div>
+            </div>
+          </div>
+          <div className="mobile-nav-links flex min-w-0 flex-nowrap items-center gap-1 overflow-x-auto pb-1 sm:flex-wrap sm:gap-2">
+            <Link to="/" className="nav-pill">Tournaments</Link>
+            <span className="nav-pill nav-pill-active">Account Console</span>
+            <button onClick={() => logout()} className="nav-pill">Sign out</button>
+          </div>
         </header>
         <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
           <form onSubmit={createAccount} className="glass-panel space-y-4 p-6">
