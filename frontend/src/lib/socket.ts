@@ -10,7 +10,7 @@ export function getSocket() {
 }
 
 /** Joins the tournament's room and re-runs `onEvent` for any of the given events. */
-export function useTournamentSocket(tournamentId: string | undefined, events: string[], onEvent: () => void) {
+export function useTournamentSocket(tournamentId: string | undefined, events: string[], onEvent: (payload?: unknown) => void) {
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
 

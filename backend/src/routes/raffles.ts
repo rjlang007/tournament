@@ -55,5 +55,6 @@ rafflesRouter.post("/:tournamentId/spin", attachUser, async (req: AuthedRequest,
     },
   });
   broadcastTournamentUpdate(tournamentId, "raffle:changed");
+  broadcastTournamentUpdate(tournamentId, "raffle:won", { draw });
   res.status(201).json({ draw, participants });
 });
