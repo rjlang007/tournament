@@ -22,6 +22,14 @@ export async function createTiebreakGame(tournamentId: string, playerIds: string
     throw new Error("a tiebreaker game needs at least 2 players");
   }
 
+  const eligiblePlayers = await prisma.player.findMany({
+    where: { id: { in: uniqueIds }, tournamentId, joinStatus: "APPROVED" },
+    select: { id: true },
+  });
+  if (eligiblePlayers.length !== uniqueIds.length) {
+    throw new Error("all tiebreaker players must be approved players in this tournament");
+  }
+
   const shuffled = shuffle(uniqueIds);
   const half = Math.ceil(shuffled.length / 2);
   const teamA = shuffled.slice(0, half);

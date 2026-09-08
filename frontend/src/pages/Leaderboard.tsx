@@ -4,10 +4,85 @@ import { api, LeaderboardRow } from "../lib/api";
 import { useTournamentSocket } from "../lib/socket";
 
 type FinalResult = {
+  tournamentName: string;
   finalized: boolean;
   finalizedAt: string | null;
   standings: LeaderboardRow[] | null;
 };
+
+function downloadResultsImage(
+  tournamentName: string,
+  rows: LeaderboardRow[],
+  format: "png" | "jpeg",
+) {
+  const width = 1400;
+  const rowHeight = 58;
+  const height = 300 + rows.length * rowHeight;
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  if (!context) return;
+
+  const background = context.createLinearGradient(0, 0, width, height);
+  background.addColorStop(0, "#071e2b");
+  background.addColorStop(1, "#123d3a");
+  context.fillStyle = background;
+  context.fillRect(0, 0, width, height);
+
+  context.fillStyle = "#d9f99d";
+  context.font = "700 28px Georgia, serif";
+  context.fillText("TOURNAMENT RESULTS", 72, 72);
+  context.fillStyle = "#ffffff";
+  context.font = "700 58px Georgia, serif";
+  context.fillText("Congratulations!", 72, 145);
+  context.fillStyle = "#b8d4d0";
+  context.font = "400 25px Arial, sans-serif";
+  context.fillText(tournamentName, 72, 188);
+
+  const winner = rows[0];
+  if (winner) {
+    context.fillStyle = "#d9f99d";
+    context.font = "700 24px Arial, sans-serif";
+    context.fillText(`Champion: ${winner.name}`, 72, 238);
+  }
+
+  const tableTop = 278;
+  context.fillStyle = "rgba(255, 255, 255, 0.12)";
+  context.fillRect(52, tableTop, width - 104, 48);
+  context.fillStyle = "#b8d4d0";
+  context.font = "700 18px Arial, sans-serif";
+  context.fillText("RANK", 78, tableTop + 31);
+  context.fillText("PLAYER", 190, tableTop + 31);
+  context.fillText("RECORD", 910, tableTop + 31);
+  context.fillText("WIN %", 1170, tableTop + 31);
+
+  rows.forEach((row, index) => {
+    const y = tableTop + 48 + index * rowHeight;
+    context.fillStyle = index % 2 === 0 ? "rgba(255, 255, 255, 0.08)" : "rgba(255, 255, 255, 0.04)";
+    context.fillRect(52, y, width - 104, rowHeight);
+    context.fillStyle = index === 0 ? "#d9f99d" : "#ffffff";
+    context.font = "700 22px Arial, sans-serif";
+    context.fillText(String(index + 1), 82, y + 36);
+    context.font = "600 22px Arial, sans-serif";
+    context.fillText(row.name, 190, y + 36);
+    context.fillStyle = "#b8d4d0";
+    context.font = "400 20px Arial, sans-serif";
+    context.fillText(`${row.wins}W - ${row.losses}L`, 910, y + 36);
+    context.fillText(`${row.winPct}%`, 1170, y + 36);
+  });
+
+  const mime = format === "png" ? "image/png" : "image/jpeg";
+  const extension = format === "png" ? "png" : "jpg";
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `${tournamentName.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "tournament"}-results.${extension}`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }, mime, format === "jpeg" ? 0.95 : undefined);
+}
 
 export default function Leaderboard() {
   const { tournamentId } = useParams();
@@ -42,6 +117,24 @@ export default function Leaderboard() {
           </div>
         )}
       </header>
+
+      {isFinal && final?.standings && (
+        <section className="overflow-hidden rounded-3xl border border-ball/30 bg-gradient-to-br from-ball/20 via-white/5 to-emerald-500/10 p-6 shadow-2xl shadow-ball/10 sm:p-8">
+          <div className="max-w-3xl">
+            <div className="text-xs font-bold uppercase tracking-[0.28em] text-ball">Official tournament results</div>
+            <h1 className="mt-3 font-display text-4xl font-bold text-white sm:text-5xl">Congratulations to {leader?.name ?? "our players"}!</h1>
+            <p className="mt-3 text-base leading-7 text-white/70">The tournament is complete. Here are the final rankings, including every player who competed.</p>
+            <div className="mt-6 flex flex-wrap gap-2">
+              <button type="button" onClick={() => downloadResultsImage(final.tournamentName, final.standings!, "png")} className="rounded-xl bg-ball px-4 py-2.5 text-sm font-bold text-neutral-950">
+                Download PNG
+              </button>
+              <button type="button" onClick={() => downloadResultsImage(final.tournamentName, final.standings!, "jpeg")} className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white">
+                Download JPEG
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
 
       <div className="grid gap-4 md:grid-cols-3">
         <div className="glass-panel p-4">

@@ -31,10 +31,8 @@ export default function TournamentSetup() {
     navigate(`/t/${data.id}/registration`);
   };
 
-  const finishTournament = async (id: string) => {
-    if (!window.confirm("Confirm that this tournament is finished? Its current standings will be recorded as official.")) return;
-    await api.post(`/tournaments/${id}/complete`);
-    load();
+  const finishTournament = (id: string) => {
+    navigate(`/t/${id}/courts`);
   };
 
   const removeTournament = async (id: string) => {
@@ -148,7 +146,7 @@ export default function TournamentSetup() {
                     <span>{t.status === "COMPLETED" ? "FINISHED" : t.status}</span>
                     <div className="flex gap-1">
                       {(user?.role === "ADMIN" || user?.role === "SUPERADMIN") && <button type="button" onClick={() => navigate(`/t/${t.id}/courts`)} className="rounded-lg border border-ball/30 px-2 py-1 text-ball">Resume</button>}
-                      {t.status !== "COMPLETED" && (user?.role === "SUPERADMIN" || (user?.role === "ADMIN" && t.ownerId === user.id)) && <button type="button" onClick={(event) => { event.stopPropagation(); finishTournament(t.id); }} className="rounded-lg border border-emerald-400/30 px-2 py-1 text-emerald-300">Finish</button>}
+                      {t.status !== "COMPLETED" && (user?.role === "SUPERADMIN" || (user?.role === "ADMIN" && t.ownerId === user.id)) && <button type="button" onClick={(event) => { event.stopPropagation(); finishTournament(t.id); }} className="rounded-lg border border-emerald-400/30 px-2 py-1 text-emerald-300">Open finalizer</button>}
                       {t.status === "COMPLETED" && (user?.role === "SUPERADMIN" || (user?.role === "ADMIN" && t.ownerId === user.id)) && <button type="button" onClick={(event) => { event.stopPropagation(); downloadSummary(t.id, t.name); }} className="rounded-lg border border-ball/30 px-2 py-1 text-ball">Download summary</button>}
                       {(user?.role === "SUPERADMIN" || (user?.role === "ADMIN" && t.ownerId === user.id)) && <button type="button" onClick={(event) => { event.stopPropagation(); removeTournament(t.id); }} className="rounded-lg border border-red-400/30 px-2 py-1 text-red-300">Remove</button>}
                     </div>

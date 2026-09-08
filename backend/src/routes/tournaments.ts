@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
-import { computeLeaderboard, detectPodiumTies, LeaderboardRow } from "../lib/leaderboard";
+import { computeLeaderboard, countUnfinishedGames, detectPodiumTies, LeaderboardRow } from "../lib/leaderboard";
 import { createTiebreakGame } from "../lib/tiebreak";
 import { broadcastTournamentUpdate } from "../socket";
 import { attachUser, AuthedRequest, canManageTournament } from "../lib/auth";
@@ -54,7 +54,19 @@ tournamentsRouter.patch("/:id/status", async (req: AuthedRequest, res) => {
 
 tournamentsRouter.post("/:id/complete", async (req: AuthedRequest, res) => {
   if (!(await canManageTournament(req, req.params.id))) return res.status(403).json({ error: "You can only finish tournaments you own." });
+  const unfinishedGames = await countUnfinishedGames(req.params.id);
+  if (unfinishedGames > 0) {
+    return res.status(409).json({ error: "Finish or cancel all queued and active games before finalizing.", unfinishedGames });
+  }
   const standings = await computeLeaderboard(req.params.id);
+  const ties = detectPodiumTies(standings);
+  if (ties.length > 0) {
+    return res.status(409).json({
+      error: "Resolve the podium tie before finalizing this tournament.",
+      ties,
+      standings,
+    });
+  }
   const tournament = await prisma.tournament.update({
     where: { id: req.params.id },
     data: { status: "COMPLETED", resultsFinalizedAt: new Date(), finalStandings: standings as any },
@@ -158,7 +170,8 @@ tournamentsRouter.post("/:id/extend", async (req: AuthedRequest, res) => {
 tournamentsRouter.get("/:id/finalize/check", async (req, res) => {
   const standings = await computeLeaderboard(req.params.id);
   const ties = detectPodiumTies(standings);
-  res.json({ standings, ties });
+  const unfinishedGames = await countUnfinishedGames(req.params.id);
+  res.json({ standings, ties, unfinishedGames });
 });
 
 // Operator locks in the official standings right now (e.g. ending early,
@@ -172,6 +185,10 @@ tournamentsRouter.get("/:id/finalize/check", async (req, res) => {
 // tied group and can leave everyone else as-is.
 tournamentsRouter.post("/:id/finalize", async (req: AuthedRequest, res) => {
   if (!(await canManageTournament(req, req.params.id))) return res.status(403).json({ error: "You can only finish tournaments you own." });
+  const unfinishedGames = await countUnfinishedGames(req.params.id);
+  if (unfinishedGames > 0) {
+    return res.status(409).json({ error: "Finish or cancel all queued and active games before finalizing.", unfinishedGames });
+  }
   const { manualOrder } = req.body as { manualOrder?: string[] };
   let standings = await computeLeaderboard(req.params.id);
 
@@ -220,7 +237,11 @@ tournamentsRouter.post("/:id/finalize/tiebreak-game", async (req: AuthedRequest,
   if (!playerIds || playerIds.length < 2) {
     return res.status(400).json({ error: "at least 2 playerIds are required" });
   }
-  const game = await createTiebreakGame(req.params.id, playerIds);
-  broadcastTournamentUpdate(req.params.id, "games:changed");
-  res.status(201).json(game);
+  try {
+    const game = await createTiebreakGame(req.params.id, playerIds);
+    broadcastTournamentUpdate(req.params.id, "games:changed");
+    return res.status(201).json(game);
+  } catch (error) {
+    return res.status(400).json({ error: error instanceof Error ? error.message : "Unable to create the tiebreaker game." });
+  }
 });

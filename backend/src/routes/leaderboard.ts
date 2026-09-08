@@ -15,8 +15,12 @@ leaderboardRouter.get("/:tournamentId", async (req, res) => {
 // time passes (see the timer tick in index.ts). Null standings/finalized
 // false means the tournament hasn't been locked in yet.
 leaderboardRouter.get("/:tournamentId/final", async (req, res) => {
-  const tournament = await prisma.tournament.findUniqueOrThrow({ where: { id: req.params.tournamentId } });
+  const tournament = await prisma.tournament.findUniqueOrThrow({
+    where: { id: req.params.tournamentId },
+    select: { name: true, resultsFinalizedAt: true, finalStandings: true },
+  });
   res.json({
+    tournamentName: tournament.name,
     finalized: !!tournament.resultsFinalizedAt,
     finalizedAt: tournament.resultsFinalizedAt,
     standings: tournament.finalStandings ?? null,

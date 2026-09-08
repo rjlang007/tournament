@@ -1,5 +1,8 @@
+import { Prisma } from "@prisma/client";
 import { prisma } from "./prisma";
 import { shuffle } from "./matchmaking";
+
+type DatabaseClient = typeof prisma | Prisma.TransactionClient;
 
 export type BracketFormat = "SINGLE_ELIMINATION" | "DOUBLE_ELIMINATION" | "ROUND_ROBIN";
 
@@ -271,18 +274,18 @@ export async function lockByes(bracketId: string) {
  * its next slot, and (double-elimination only) drops the loser into the
  * losers bracket if this match has a loserNextMatchId wired up.
  */
-export async function recordBracketResult(matchId: string, winningEntryId: string, losingEntryId: string | null) {
-  const match = await prisma.bracketMatch.findUniqueOrThrow({ where: { id: matchId } });
-  await prisma.bracketMatch.update({ where: { id: matchId }, data: { winnerEntryId: winningEntryId } });
+export async function recordBracketResult(matchId: string, winningEntryId: string, losingEntryId: string | null, db: DatabaseClient = prisma) {
+  const match = await db.bracketMatch.findUniqueOrThrow({ where: { id: matchId } });
+  await db.bracketMatch.update({ where: { id: matchId }, data: { winnerEntryId: winningEntryId } });
 
   if (match.nextMatchId && match.nextSlot) {
-    await prisma.bracketMatch.update({
+    await db.bracketMatch.update({
       where: { id: match.nextMatchId },
       data: { [match.nextSlot === "A" ? "entryAId" : "entryBId"]: winningEntryId },
     });
   }
   if (match.loserNextMatchId && match.loserNextSlot && losingEntryId) {
-    await prisma.bracketMatch.update({
+    await db.bracketMatch.update({
       where: { id: match.loserNextMatchId },
       data: { [match.loserNextSlot === "A" ? "entryAId" : "entryBId"]: losingEntryId },
     });

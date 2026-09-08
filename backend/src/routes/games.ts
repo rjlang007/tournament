@@ -118,31 +118,41 @@ gamesRouter.post("/:id/finish", async (req, res) => {
     scoreB?: number;
   };
 
-  const game = await prisma.game.update({
-    where: { id: req.params.id },
-    data: { status: "FINISHED", finishedAt: new Date(), winningTeam, scoreA, scoreB },
-    include: gameInclude,
-  });
-
-  // Free the court and return its players to WAITING so they can be re-queued.
-  if (game.courtId) {
-    await prisma.court.update({ where: { id: game.courtId }, data: {} }); // no-op, court stays; game just leaves READY/IN_PROGRESS pool
-  }
-  for (const gp of game.players) {
-    await enqueuePlayer(game.tournamentId, gp.playerId);
-  }
-
-  // Fixed-bracket: advance the winner (and, for double elimination, drop
-  // the loser into the losers bracket).
-  if (game.bracketMatchId && winningTeam) {
-    const match = await prisma.bracketMatch.findUnique({ where: { id: game.bracketMatchId } });
-    if (match) {
-      const winnerEntryId = winningTeam === "A" ? match.entryAId : match.entryBId;
-      const loserEntryId = winningTeam === "A" ? match.entryBId : match.entryAId;
-      if (winnerEntryId) {
-        await recordBracketResult(match.id, winnerEntryId, loserEntryId ?? null);
+  let game;
+  try {
+    game = await prisma.$transaction(async (tx) => {
+      const current = await tx.game.findUnique({ where: { id: req.params.id }, include: gameInclude });
+      if (!current || !["READY", "IN_PROGRESS", "PAUSED"].includes(current.status)) {
+        throw new Error("Only a ready, in-progress, or paused game can be finished.");
       }
-    }
+
+      const finished = await tx.game.update({
+        where: { id: req.params.id },
+        data: { status: "FINISHED", finishedAt: new Date(), winningTeam, scoreA, scoreB },
+        include: gameInclude,
+      });
+
+      for (const gp of finished.players) {
+        await enqueuePlayer(finished.tournamentId, gp.playerId, tx);
+      }
+
+      // Fixed-bracket: advance the winner (and, for double elimination, drop
+      // the loser into the losers bracket) in the same transaction.
+      if (finished.bracketMatchId && winningTeam) {
+        const match = await tx.bracketMatch.findUnique({ where: { id: finished.bracketMatchId } });
+        if (match) {
+          const winnerEntryId = winningTeam === "A" ? match.entryAId : match.entryBId;
+          const loserEntryId = winningTeam === "A" ? match.entryBId : match.entryAId;
+          if (winnerEntryId) {
+            await recordBracketResult(match.id, winnerEntryId, loserEntryId ?? null, tx);
+          }
+        }
+      }
+
+      return finished;
+    });
+  } catch (error) {
+    return res.status(400).json({ error: error instanceof Error ? error.message : "Unable to finish the game." });
   }
 
   // Keep the pipeline flowing: refill the upcoming preview and fill any free court.

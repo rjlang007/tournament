@@ -6,7 +6,7 @@ import { createServer } from "http";
 import path from "path";
 import { prisma } from "./lib/prisma";
 import { initSocket, broadcastTournamentUpdate } from "./socket";
-import { computeLeaderboard } from "./lib/leaderboard";
+import { computeLeaderboard, countUnfinishedGames } from "./lib/leaderboard";
 
 import { tournamentsRouter } from "./routes/tournaments";
 import { playersRouter } from "./routes/players";
@@ -141,9 +141,15 @@ setInterval(async () => {
   // forward for players who want to keep going.
   const now = new Date();
   const dueTournaments = await prisma.tournament.findMany({
-    where: { status: "ACTIVE", scheduledEnd: { lte: now }, resultsFinalizedAt: null },
+    where: {
+      status: "ACTIVE",
+      scheduledEnd: { lte: now },
+      resultsFinalizedAt: null,
+      games: { none: { status: { in: ["UPCOMING", "READY", "IN_PROGRESS", "PAUSED"] } } },
+    },
   });
   for (const t of dueTournaments) {
+    if (await countUnfinishedGames(t.id) > 0) continue;
     const standings = await computeLeaderboard(t.id);
     await prisma.tournament.update({
       where: { id: t.id },

@@ -134,6 +134,12 @@ export type TieGroup = {
   rows: LeaderboardRow[];
 };
 
+export type FinalizeCheck = {
+  standings: LeaderboardRow[];
+  ties: TieGroup[];
+  unfinishedGames: number;
+};
+
 export type RaffleDraw = {
   id: string;
   prizeDescription: string;

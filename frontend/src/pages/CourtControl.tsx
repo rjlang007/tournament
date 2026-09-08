@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { api, Court, Game, Player, Tournament, TieGroup } from "../lib/api";
+import { api, Court, FinalizeCheck, Game, Player, Tournament, TieGroup } from "../lib/api";
 import { useTournamentSocket } from "../lib/socket";
 import SpinWheel from "../components/SpinWheel";
 
@@ -59,7 +59,7 @@ export default function CourtControl() {
   // Finalize flow: null = closed. Otherwise holds the preview from
   // /finalize/check (current standings + any podium ties) so the operator
   // can resolve ties before the results actually get locked in.
-  const [finalizeCheck, setFinalizeCheck] = useState<{ ties: TieGroup[] } | null>(null);
+  const [finalizeCheck, setFinalizeCheck] = useState<FinalizeCheck | null>(null);
   const [resolvingTie, setResolvingTie] = useState<TieGroup | null>(null);
   const [manualOrder, setManualOrder] = useState<string[]>([]);
   const [finalizeBusy, setFinalizeBusy] = useState(false);
@@ -126,6 +126,12 @@ export default function CourtControl() {
     if (!finishingGame) return;
     await api.post(`/games/${finishingGame.id}/finish`, winningTeam ? { winningTeam } : {});
     setFinishingGame(null);
+  };
+
+  const cancelGame = async (gameId: string) => {
+    if (!window.confirm("Cancel this game? Its players will return to the waiting queue.")) return;
+    await api.post(`/games/${gameId}/cancel`);
+    load();
   };
 
   const setDuration = async (gameId: string, minutes: number) => {
@@ -352,9 +358,15 @@ export default function CourtControl() {
                 </h3>
                 <p className="text-xs text-white/40 mb-4">
                   This stops the tournament and locks in the leaderboard as the official final
-                  standings. Live games in progress won't be interrupted, but new games won't be
-                  drawn or seated once results are finalized.
+                  standings. Finish or cancel all queued and active games first so no late result
+                  is missing from the official ranking.
                 </p>
+
+                {finalizeCheck.unfinishedGames > 0 && (
+                  <div className="mb-4 rounded-xl border border-orange-300/30 bg-orange-400/10 p-3 text-sm text-orange-200">
+                    {finalizeCheck.unfinishedGames} game{finalizeCheck.unfinishedGames === 1 ? "" : "s"} still need{finalizeCheck.unfinishedGames === 1 ? "s" : ""} to be finished or cancelled.
+                  </div>
+                )}
 
                 {finalizeCheck.ties.map((group) => (
                   <div key={group.rank} className="rounded-xl border border-white/10 bg-white/5 p-3 mb-3">
@@ -393,7 +405,7 @@ export default function CourtControl() {
                     Cancel
                   </button>
                   <button
-                    disabled={finalizeBusy}
+                    disabled={finalizeBusy || finalizeCheck.unfinishedGames > 0}
                     onClick={finalizeAnyway}
                     className="bg-red-500/80 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50"
                   >
@@ -408,6 +420,11 @@ export default function CourtControl() {
                   Arrange these tied players from highest to lowest. Everyone else's ranking stays
                   as computed.
                 </p>
+                {finalizeCheck.unfinishedGames > 0 && (
+                  <p className="mb-4 text-xs text-orange-200">
+                    Finish or cancel the {finalizeCheck.unfinishedGames} remaining game{finalizeCheck.unfinishedGames === 1 ? "" : "s"} before confirming the final order.
+                  </p>
+                )}
                 <div className="mb-4">
                   {manualOrder.map((playerId, i) => {
                     const row = resolvingTie.rows.find((r) => r.playerId === playerId)!;
@@ -448,7 +465,7 @@ export default function CourtControl() {
                     Back
                   </button>
                   <button
-                    disabled={finalizeBusy}
+                    disabled={finalizeBusy || finalizeCheck.unfinishedGames > 0}
                     onClick={confirmManualOrder}
                     className="bg-ball text-neutral-900 font-display font-bold rounded-lg px-4 py-2 text-sm disabled:opacity-50"
                   >
@@ -558,6 +575,11 @@ export default function CourtControl() {
                         <button onClick={() => setFinishingGame(game)} className="bg-red-500/80 rounded-lg px-3 py-1.5 text-sm font-semibold">Finish</button>
                       </>
                     )}
+                    {game.status !== "FINISHED" && game.status !== "CANCELLED" && (
+                      <button onClick={() => cancelGame(game.id)} className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-white/60 hover:text-white">
+                        Cancel game
+                      </button>
+                    )}
                     <select
                       defaultValue={String(game.durationSeconds / 60)}
                       onChange={(e) => setDuration(game.id, Number(e.target.value))}
@@ -595,6 +617,9 @@ export default function CourtControl() {
                     <option key={court.id} value={court.id}>{court.label}</option>
                   ))}
                 </select>
+                <button type="button" onClick={() => cancelGame(g.id)} className="rounded-lg border border-white/15 px-2 py-1.5 text-xs text-white/55 hover:text-white">
+                  Cancel
+                </button>
               </div>
             ))}
             {upNext.length < 3 && [0, 1, 2].slice(upNext.length).map((index) => <div key={`empty-up-next-${index}`} className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-3 text-center text-xs uppercase tracking-[0.14em] text-white/30">Lineup {index + 1} awaiting eligible players</div>)}

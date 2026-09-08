@@ -1,5 +1,8 @@
 import { prisma } from "./prisma";
+import { Prisma } from "@prisma/client";
 import { buildQueueBatch, QueuedPlayer } from "./matchmaking";
+
+type DatabaseClient = typeof prisma | Prisma.TransactionClient;
 
 const UPCOMING_PREVIEW_SIZE = 6; // "4-6 waiting games" shown on kiosk
 
@@ -125,9 +128,9 @@ export async function assignAllFreeCourts(tournamentId: string) {
 }
 
 /** Adds a player back into the waiting pool / queue (e.g. after finishing a game, or a walk-in registrant). */
-export async function enqueuePlayer(tournamentId: string, playerId: string) {
-  await prisma.player.update({ where: { id: playerId }, data: { status: "WAITING" } });
-  return prisma.queueEntry.upsert({
+export async function enqueuePlayer(tournamentId: string, playerId: string, db: DatabaseClient = prisma) {
+  await db.player.update({ where: { id: playerId }, data: { status: "WAITING" } });
+  return db.queueEntry.upsert({
     where: { tournamentId_playerId: { tournamentId, playerId } },
     update: {},
     create: { tournamentId, playerId },

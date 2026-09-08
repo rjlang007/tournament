@@ -1,14 +1,14 @@
 # Dink Board — Pickleball Tournament System (Simplified)
 
-A focused tournament management system for a single venue. No player accounts,
-no logins, no community board — just the game and the matchmaking.
+A focused tournament management system for a single venue, with administrator
+accounts, player accounts, community features, live matchmaking, and results.
 
 - **Admin/staff side** (Registration, Court Control, Tournament Setup, Bracket):
-  open on your venue's laptop/network, no login required — you control access
-  simply by not exposing those pages/URLs publicly.
+  requires an authenticated administrator account. Admins manage their own
+  tournaments; superadmins can manage all tournaments.
 - **Player/customer side** (Kiosk, Leaderboard): read-only public views. Anyone
-  can look at these to see who's playing next, who's currently on court, results,
-  and the leaderboard (wins, losses, games played) — no account needed.
+  can look at who's playing next, who's currently on court, final results, and
+  the leaderboard. Players need an account only when joining a tournament.
 
 ## What it does
 - Player registration with skill levels (Beginner / Average / Advance)
@@ -19,6 +19,8 @@ no logins, no community board — just the game and the matchmaking.
 - Staff court control: manual Start / Pause / Resume / Finish + editable game timer
 - Live kiosk display (Now Playing / Up Next / Waiting pool) via Socket.IO — this is the public "who's playing next / who's winning" screen
 - Leaderboard ranked by wins, with games-played count, for random-pairing tournaments
+- Tie-aware tournament finalization with balanced tiebreak games or manual ordering
+- Congratulatory final-results page with PNG and JPEG downloads for everyone
 - Editable rosters/brackets for substitutions (player leaves, emergency, etc.)
 
 ## Stack
@@ -88,8 +90,8 @@ same domain.
 ## Who sees what
 | Screen | Who it's for | Needs login? |
 |---|---|---|
-| Tournament Setup / Registration | Admin | No — just don't share the URL |
-| Court Control | Admin/staff | No — just don't share the URL |
+| Tournament Setup / Registration | Admin | Yes |
+| Court Control | Admin/staff | Yes |
 | Bracket | Admin (edit) / anyone (view) | No |
 | Kiosk (Now Playing / Up Next) | Players & customers | No |
 | Leaderboard (wins, games played) | Players & customers | No |
@@ -121,9 +123,12 @@ can't be validly matched this round stays in the queue for the next draw.
 - `frontend/src/pages/Leaderboard.tsx` — public read-only leaderboard
 - `frontend/src/components/SpinWheel.tsx` — the reveal animation
 
-## Notes / next steps you may want
-- Everything is currently open on the network the app runs on — fine for a
-  single venue laptop + LAN. Add a simple admin password before exposing it publicly.
-- The "Finish game" flow currently uses a browser `prompt()` for entering the
-  winning team — swap for a proper score-entry modal for a nicer staff UX.
-- Consider adding point/score tracking per game if you want tiebreakers beyond win count.
+## Production notes
+- Keep `JWT_SECRET`, `DATABASE_URL`, and `CORS_ORIGIN` configured in the deployment
+  environment. Do not use the sample Docker Compose database password publicly.
+- Back up PostgreSQL and test restoring a backup before running a major event.
+- Scheduled finalization waits until queued and active games are finished or
+  cancelled, so late scores are not omitted from official standings.
+- The finalizer detects podium ties and supports either a tiebreak game or manual
+  ordering. Tiebreak games split the selected players into teams as evenly as possible.
+- Uploaded files need a persistent Railway volume or external object storage.

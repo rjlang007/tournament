@@ -10,6 +10,14 @@ export type LeaderboardRow = {
   winPct: number;
 };
 
+const UNFINISHED_GAME_STATUSES = ["UPCOMING", "READY", "IN_PROGRESS", "PAUSED"] as const;
+
+export async function countUnfinishedGames(tournamentId: string): Promise<number> {
+  return prisma.game.count({
+    where: { tournamentId, status: { in: [...UNFINISHED_GAME_STATUSES] } },
+  });
+}
+
 /**
  * Overall standings for a tournament: every player's wins/losses across all
  * FINISHED games (works for both RANDOM_PAIRING and FIXED_BRACKET, since
