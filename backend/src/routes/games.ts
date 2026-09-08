@@ -11,6 +11,14 @@ const gameInclude = {
   court: true,
 };
 
+function withCurrentRemainingSeconds<T extends { status: string; startedAt: Date | null; durationSeconds: number; remainingSeconds: number }>(game: T) {
+  if (game.status !== "IN_PROGRESS" || !game.startedAt) return game;
+  return {
+    ...game,
+    remainingSeconds: Math.max(0, game.durationSeconds - Math.floor((Date.now() - game.startedAt.getTime()) / 1000)),
+  };
+}
+
 // Kiosk feed: now playing (per court) + next 4-6 upcoming + waiting pool count
 gamesRouter.get("/board/:tournamentId", async (req, res) => {
   const tournamentId = req.params.tournamentId;
@@ -30,7 +38,11 @@ gamesRouter.get("/board/:tournamentId", async (req, res) => {
 
   const waitingCount = await prisma.queueEntry.count({ where: { tournamentId } });
 
-  res.json({ nowPlaying, upNext, waitingCount });
+  res.json({
+    nowPlaying: nowPlaying.map(withCurrentRemainingSeconds),
+    upNext: upNext.map(withCurrentRemainingSeconds),
+    waitingCount,
+  });
 });
 
 // Staff sets/edits the timer length for a game (default 10 min, editable before or during)

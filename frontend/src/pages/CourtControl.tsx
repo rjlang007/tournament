@@ -77,9 +77,23 @@ export default function CourtControl() {
   useEffect(() => { load(); }, [tournamentId]);
   useTournamentSocket(
     tournamentId,
-    ["courts:changed", "games:changed", "players:changed", "timer:tick", "tournament:changed"],
+    ["courts:changed", "games:changed", "players:changed", "tournament:changed"],
     load
   );
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setCourts((currentCourts) => currentCourts.map((court) => ({
+        ...court,
+        games: court.games?.map((game) => (
+          game.status === "IN_PROGRESS"
+            ? { ...game, remainingSeconds: Math.max(0, game.remainingSeconds - 1) }
+            : game
+        )),
+      })));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, []);
 
   const remainingMs = useCountdown(tournament?.scheduledEnd);
   const isPastSchedule = remainingMs === 0;

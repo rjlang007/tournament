@@ -127,30 +127,10 @@ app.get("*", (_req, res, next) => {
 const httpServer = createServer(app);
 initSocket(httpServer);
 
-// Server-side timer tick: every second, decrement remainingSeconds for any
-// IN_PROGRESS game and broadcast so all connected kiosk/court screens stay
-// in sync even if a staff member's browser refreshes. Countdown stops (but
-// game stays IN_PROGRESS) at 0 - staff still manually presses Finish, this
-// is just a visual/audible cue, not an auto-end, since real games can run over.
+// Finalize tournaments shortly after their scheduled end. Live countdowns are
+// calculated by the board endpoint and updated in each browser, so this loop
+// does not perform a database write every second or trigger full page reloads.
 setInterval(async () => {
-  const liveGames = await prisma.game.findMany({
-    where: { status: "IN_PROGRESS", startedAt: { not: null } },
-  });
-
-  const tournamentIds = new Set<string>();
-  for (const game of liveGames) {
-    const elapsedSeconds = Math.floor((Date.now() - game.startedAt!.getTime()) / 1000);
-    const remainingSeconds = Math.max(0, game.durationSeconds - elapsedSeconds);
-    await prisma.game.update({
-      where: { id: game.id },
-      data: { remainingSeconds },
-    });
-    tournamentIds.add(game.tournamentId);
-  }
-  for (const id of tournamentIds) {
-    broadcastTournamentUpdate(id, "timer:tick");
-  }
-
   // Auto-finalize: once a tournament's scheduled end time (e.g. 9:00 PM)
   // has passed and the operator hasn't extended it, record the current
   // standings as official and mark the tournament COMPLETED. Games already
@@ -169,7 +149,7 @@ setInterval(async () => {
     });
     broadcastTournamentUpdate(t.id, "tournament:changed");
   }
-}, 1000);
+}, 5000);
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 httpServer.listen(PORT, () => {

@@ -23,7 +23,18 @@ export default function Kiosk() {
     });
 
   useEffect(() => { load(); }, [tournamentId]);
-  useTournamentSocket(tournamentId, ["games:changed", "courts:changed", "timer:tick"], load);
+  useTournamentSocket(tournamentId, ["games:changed", "courts:changed"], load);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      setNowPlaying((games) => games.map((game) => (
+        game.status === "IN_PROGRESS"
+          ? { ...game, remainingSeconds: Math.max(0, game.remainingSeconds - 1) }
+          : game
+      )));
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, []);
 
   return (
     <div className="min-h-[calc(100vh-65px)] bg-court-bg p-4 sm:p-8">
