@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api, RaffleDraw, RaffleResponse } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
@@ -15,6 +15,8 @@ export default function Raffle() {
   const [spinning, setSpinning] = useState(false);
   const [wheelRotation, setWheelRotation] = useState(0);
   const [error, setError] = useState("");
+  const revealTimer = useRef<number | undefined>(undefined);
+  const animationTimer = useRef<number | undefined>(undefined);
 
   const load = () => {
     if (!tournamentId) return;
@@ -52,6 +54,10 @@ export default function Raffle() {
         setSpinning(false);
       }, 6400);
     } catch (requestError: any) {
+    useEffect(() => () => {
+      if (revealTimer.current !== undefined) window.clearTimeout(revealTimer.current);
+      if (animationTimer.current !== undefined) window.clearInterval(animationTimer.current);
+    }, []);
       setError(requestError?.response?.data?.error || "The raffle could not be started.");
       setSpinning(false);
     }

@@ -18,12 +18,20 @@ export function useTournamentSocket(tournamentId: string | undefined, events: st
     if (!tournamentId) return;
     const s = getSocket();
     let refreshTimer: number | undefined;
+    let latestPayload: unknown;
     const joinRoom = () => s.emit("join-tournament", tournamentId);
-    const scheduleRefresh = () => {
+    const scheduleRefresh = (payload?: unknown) => {
+      if (payload !== undefined) {
+        onEventRef.current(payload);
+        return;
+      }
+      latestPayload = payload;
       if (refreshTimer !== undefined) return;
       refreshTimer = window.setTimeout(() => {
         refreshTimer = undefined;
-        onEventRef.current();
+        const payloadToSend = latestPayload;
+        latestPayload = undefined;
+        onEventRef.current(payloadToSend);
       }, 100);
     };
 

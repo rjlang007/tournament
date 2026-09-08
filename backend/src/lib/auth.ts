@@ -22,13 +22,13 @@ export async function refreshSubscriptionStatus(user: {
   if (user.role !== "ADMIN" || !user.subscriptionExpiresAt) return user;
   if (user.subscriptionExpiresAt > new Date() || user.subscriptionStatus === "EXPIRED") {
     if (user.subscriptionExpiresAt > new Date() && user.subscriptionStatus === "EXPIRED") {
-      const { prisma } = await import("./prisma");
+      const { prisma } = await import("./prisma.js");
       return prisma.user.update({ where: { id: user.id }, data: { subscriptionStatus: "ACTIVE" } });
     }
     return user;
   }
   if (user.subscriptionStatus !== "SUSPENDED") {
-    const { prisma } = await import("./prisma");
+    const { prisma } = await import("./prisma.js");
     return prisma.user.update({ where: { id: user.id }, data: { subscriptionStatus: "SUSPENDED" } });
   }
   return user;
@@ -58,7 +58,7 @@ export interface AuthedRequest extends Request {
 
 export async function canManageTournament(req: AuthedRequest, tournamentId: string) {
   if (!req.userId) return false;
-  const { prisma } = await import("./prisma");
+  const { prisma } = await import("./prisma.js");
   const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { role: true } });
   if (user?.role === "SUPERADMIN") return true;
   const tournament = await prisma.tournament.findUnique({ where: { id: tournamentId }, select: { ownerId: true } });
@@ -84,7 +84,7 @@ export function requireAuth(req: AuthedRequest, res: Response, next: NextFunctio
   if (!req.userId) {
     return res.status(401).json({ error: "Not signed in." });
   }
-  import("./prisma").then(async ({ prisma }) => {
+  import("./prisma.js").then(async ({ prisma }) => {
     const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { id: true, role: true, subscriptionExpiresAt: true, subscriptionStatus: true } });
     if (!user) return res.status(401).json({ error: "Account not found." });
     if (user.role === "ADMIN" && user.subscriptionExpiresAt && user.subscriptionExpiresAt <= new Date()) {
@@ -99,7 +99,7 @@ export async function requireAdmin(req: AuthedRequest, res: Response, next: Next
   if (!req.userId) {
     return res.status(401).json({ error: "Not signed in." });
   }
-  const { prisma } = await import("./prisma");
+  const { prisma } = await import("./prisma.js");
   const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { role: true } });
   if (!user || !["SUPERADMIN", "ADMIN"].includes(user.role)) {
     return res.status(403).json({ error: "Administrator access is required." });
@@ -110,7 +110,7 @@ export async function requireAdmin(req: AuthedRequest, res: Response, next: Next
 
 export async function requireSuperAdmin(req: AuthedRequest, res: Response, next: NextFunction) {
   if (!req.userId) return res.status(401).json({ error: "Not signed in." });
-  const { prisma } = await import("./prisma");
+  const { prisma } = await import("./prisma.js");
   const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { role: true } });
   if (!user || user.role !== "SUPERADMIN") {
     return res.status(403).json({ error: "Platform owner access is required." });

@@ -45,6 +45,15 @@ rafflesRouter.post("/:tournamentId/spin", attachUser, async (req: AuthedRequest,
     return res.status(400).json({ error: "There are no players in an active game to enter in the raffle." });
   }
 
+  const durationMs = 6400;
+  const revealAt = Date.now() + durationMs;
+  broadcastTournamentUpdate(tournamentId, "raffle:spinning", {
+    participants,
+    prizeDescription,
+    durationMs,
+    revealAt,
+  });
+
   const winner = participants[Math.floor(Math.random() * participants.length)];
   const draw = await prisma.raffleDraw.create({
     data: {
@@ -55,6 +64,6 @@ rafflesRouter.post("/:tournamentId/spin", attachUser, async (req: AuthedRequest,
     },
   });
   broadcastTournamentUpdate(tournamentId, "raffle:changed");
-  broadcastTournamentUpdate(tournamentId, "raffle:won", { draw });
+  broadcastTournamentUpdate(tournamentId, "raffle:won", { draw, revealAt });
   res.status(201).json({ draw, participants });
 });

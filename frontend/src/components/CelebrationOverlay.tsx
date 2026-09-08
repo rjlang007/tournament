@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { RaffleDraw } from "../lib/api";
 import { useTournamentSocket } from "../lib/socket";
 
@@ -6,11 +6,19 @@ type Celebration = { draw: RaffleDraw };
 
 export default function CelebrationOverlay({ tournamentId }: { tournamentId: string | undefined }) {
   const [celebration, setCelebration] = useState<Celebration | null>(null);
+  const revealTimer = useRef<number | undefined>(undefined);
 
   useTournamentSocket(tournamentId, ["raffle:won"], (payload) => {
-    const next = payload as Celebration | undefined;
-    if (next?.draw?.winnerName) setCelebration(next);
+    const next = payload as (Celebration & { revealAt?: number }) | undefined;
+    if (!next?.draw?.winnerName) return;
+    if (revealTimer.current !== undefined) window.clearTimeout(revealTimer.current);
+    const delay = Math.max(0, (next.revealAt ?? Date.now()) - Date.now());
+    revealTimer.current = window.setTimeout(() => setCelebration(next), delay);
   });
+
+  useEffect(() => () => {
+    if (revealTimer.current !== undefined) window.clearTimeout(revealTimer.current);
+  }, []);
 
   useEffect(() => {
     if (!celebration) return;

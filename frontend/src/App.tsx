@@ -1,5 +1,8 @@
-import { Routes, Route, NavLink, Link, useParams, Navigate, useLocation } from "react-router-dom";
+import { Routes, Route, NavLink, Link, useParams, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { useEffect } from "react";
 import { useAuth } from "./context/AuthContext";
+import { api } from "./lib/api";
+import { useTournamentSocket } from "./lib/socket";
 import TournamentSetup from "./pages/TournamentSetup";
 import Registration from "./pages/Registration";
 import CourtControl from "./pages/CourtControl";
@@ -16,7 +19,21 @@ import CelebrationOverlay from "./components/CelebrationOverlay";
 function Shell() {
   const { user, loading, logout } = useAuth();
   const location = useLocation();
+  const navigate = useNavigate();
   const { tournamentId } = useParams();
+  const returnToDashboard = () => {
+    if (user?.role === "PLAYER") void logout();
+    navigate("/", { replace: true });
+  };
+
+  useTournamentSocket(tournamentId, ["tournament:deleted"], returnToDashboard);
+  useEffect(() => {
+    if (!tournamentId) return;
+    api.get(`/tournaments/${tournamentId}`).catch((error) => {
+      if (error?.response?.status === 404) returnToDashboard();
+    });
+  }, [tournamentId]);
+
   if (loading) return <div className="min-h-screen p-10 text-center text-white/60">Loading account...</div>;
   const base = `/t/${tournamentId}`;
   const linkClass = ({ isActive }: { isActive: boolean }) =>
