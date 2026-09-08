@@ -1,0 +1,6 @@
+ALTER TABLE "Player" ADD COLUMN "arrivalAt" TIMESTAMP(3);
+
+UPDATE "Player" SET "arrivalAt" = "createdAt" WHERE "arrivalAt" IS NULL;
+
+ALTER TABLE "Player" ALTER COLUMN "arrivalAt" SET DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE "Player" ALTER COLUMN "arrivalAt" SET NOT NULL;

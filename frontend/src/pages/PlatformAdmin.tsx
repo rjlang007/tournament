@@ -50,7 +50,7 @@ export default function PlatformAdmin() {
       <div className="mx-auto max-w-6xl space-y-6">
         <header className="glass-panel tournament-nav sticky top-2 z-20 flex min-w-0 flex-col gap-3 px-3 py-3 sm:top-4 sm:gap-4 sm:px-6 sm:py-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-ball/20 text-xl shadow-inner shadow-ball/30 ring-1 ring-ball/30">🏓</div>
+            <Link to="/" aria-label="Go to tournament dashboard" className="flex h-10 w-10 items-center justify-center rounded-xl bg-ball/20 text-xl shadow-inner shadow-ball/30 ring-1 ring-ball/30">🏓</Link>
             <div>
               <div className="font-display text-xl font-bold tracking-wide text-ball">Dink Board</div>
               <div className="text-[10px] uppercase tracking-[0.24em] text-white/45">Platform Console</div>

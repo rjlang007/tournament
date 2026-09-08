@@ -5,7 +5,12 @@ export type QueuedPlayer = {
   name: string;
   skillLevel: SkillLevel;
   gamesPlayed: number;
-  joinedAt: number;
+  arrivalAt: number;
+  queuedAt: number;
+  wins: number;
+  losses: number;
+  recentPartnerIds: Set<string>;
+  recentOpponentIds: Set<string>;
 };
 
 export type ProposedPairing = {
@@ -100,6 +105,11 @@ export type DoublesGame = {
   teamB: [QueuedPlayer, QueuedPlayer];
 };
 
+export type MatchmakingOptions = {
+  finalPhase?: boolean;
+  leaderIds?: Set<string>;
+};
+
 /**
  * Builds one 2v2 doubles game out of a pool: draws two eligible partner
  * pairs first (each pair is a valid teammate combo under the skill rule),
@@ -113,7 +123,7 @@ export type DoublesGame = {
  *
  * Returns null if the pool doesn't contain two eligible partner-pairs.
  */
-export function buildDoublesGame(pool: QueuedPlayer[]): {
+export function buildDoublesGame(pool: QueuedPlayer[], options: MatchmakingOptions = {}): {
   game: DoublesGame | null;
   leftover: QueuedPlayer[];
 } {
@@ -121,7 +131,22 @@ export function buildDoublesGame(pool: QueuedPlayer[]): {
     return { game: null, leftover: pool };
   }
   const shuffled = shuffle(pool);
-  const candidates: Array<{ teamA: [QueuedPlayer, QueuedPlayer]; teamB: [QueuedPlayer, QueuedPlayer]; diff: number; maxGames: number; totalGames: number; arrival: number }> = [];
+  const candidates: Array<{
+    teamA: [QueuedPlayer, QueuedPlayer];
+    teamB: [QueuedPlayer, QueuedPlayer];
+    diff: number;
+    maxPace: number;
+    totalPace: number;
+    queuedAt: number;
+    leaderCount: number;
+    repeatPenalty: number;
+  }> = [];
+  const now = Date.now();
+  const gamesPerHour = 4;
+  const pace = (player: QueuedPlayer) => {
+    const hoursAvailable = Math.max(1 / gamesPerHour, (now - player.arrivalAt) / 3_600_000);
+    return player.gamesPlayed / hoursAvailable;
+  };
 
   // Evaluate complete four-player games instead of committing to the first
   // legal pair found. This avoids a greedy pairing leaving an unbalanced game
@@ -136,13 +161,23 @@ export function buildDoublesGame(pool: QueuedPlayer[]): {
           const teamA: [QueuedPlayer, QueuedPlayer] = [shuffled[a], shuffled[b]];
           const teamB: [QueuedPlayer, QueuedPlayer] = [shuffled[c], shuffled[d]];
           const selected = [...teamA, ...teamB];
+          const teamPairs: Array<[QueuedPlayer, QueuedPlayer]> = [teamA, teamB];
+          const repeatPenalty = selected.reduce((penalty, player, index) => {
+            const teammate = teamPairs[Math.floor(index / 2)][index % 2 === 0 ? 1 : 0];
+            const opponents = teamPairs[1 - Math.floor(index / 2)];
+            return penalty
+              + (player.recentPartnerIds.has(teammate.id) ? 4 : 0)
+              + opponents.reduce((opponentPenalty, opponent) => opponentPenalty + (player.recentOpponentIds.has(opponent.id) ? 1 : 0), 0);
+          }, 0);
           candidates.push({
             teamA,
             teamB,
             diff: Math.abs(pairScore({ playerA: teamA[0], playerB: teamA[1] }) - pairScore({ playerA: teamB[0], playerB: teamB[1] })),
-            maxGames: Math.max(...selected.map((player) => player.gamesPlayed)),
-            totalGames: selected.reduce((sum, player) => sum + player.gamesPlayed, 0),
-            arrival: Math.max(...selected.map((player) => player.joinedAt)),
+            maxPace: Math.max(...selected.map(pace)),
+            totalPace: selected.reduce((sum, player) => sum + pace(player), 0),
+            queuedAt: Math.min(...selected.map((player) => player.queuedAt)),
+            leaderCount: options.leaderIds ? selected.filter((player) => options.leaderIds?.has(player.id)).length : 0,
+            repeatPenalty,
           });
         }
       }
@@ -150,14 +185,20 @@ export function buildDoublesGame(pool: QueuedPlayer[]): {
   }
 
   if (candidates.length === 0) return { game: null, leftover: pool };
-  const bestMaxGames = Math.min(...candidates.map((candidate) => candidate.maxGames));
-  const fairnessCandidates = candidates.filter((candidate) => candidate.maxGames === bestMaxGames);
-  const bestTotalGames = Math.min(...fairnessCandidates.map((candidate) => candidate.totalGames));
-  const balancedCandidates = fairnessCandidates.filter((candidate) => candidate.totalGames === bestTotalGames);
+  const leaderCandidates = options.finalPhase && options.leaderIds && pool.some((player) => options.leaderIds?.has(player.id))
+    ? candidates.filter((candidate) => candidate.leaderCount === 1)
+    : candidates;
+  const eligibleCandidates = leaderCandidates.length > 0 ? leaderCandidates : candidates;
+  const bestRepeatPenalty = Math.min(...eligibleCandidates.map((candidate) => candidate.repeatPenalty));
+  const freshCandidates = eligibleCandidates.filter((candidate) => candidate.repeatPenalty === bestRepeatPenalty);
+  const bestMaxPace = Math.min(...freshCandidates.map((candidate) => candidate.maxPace));
+  const fairnessCandidates = freshCandidates.filter((candidate) => candidate.maxPace === bestMaxPace);
+  const bestTotalPace = Math.min(...fairnessCandidates.map((candidate) => candidate.totalPace));
+  const balancedCandidates = fairnessCandidates.filter((candidate) => candidate.totalPace === bestTotalPace);
   const bestDiff = Math.min(...balancedCandidates.map((candidate) => candidate.diff));
   const skillBalancedCandidates = balancedCandidates.filter((candidate) => candidate.diff === bestDiff);
-  const earliestArrival = Math.min(...skillBalancedCandidates.map((candidate) => candidate.arrival));
-  const fairCandidates = skillBalancedCandidates.filter((candidate) => candidate.arrival === earliestArrival);
+  const earliestQueueTime = Math.min(...skillBalancedCandidates.map((candidate) => candidate.queuedAt));
+  const fairCandidates = skillBalancedCandidates.filter((candidate) => candidate.queuedAt === earliestQueueTime);
   const best = shuffle(fairCandidates)[0];
   const [teamPairA, teamPairB] = shuffle([best.teamA, best.teamB]);
   const remaining = pool.filter(
@@ -185,13 +226,14 @@ export function buildDoublesGame(pool: QueuedPlayer[]): {
  */
 export function buildQueueBatch(
   pool: QueuedPlayer[],
-  maxGames: number
+  maxGames: number,
+  options: MatchmakingOptions = {}
 ): { games: DoublesGame[]; leftover: QueuedPlayer[] } {
   let remainingPool = [...pool];
   const games: DoublesGame[] = [];
 
   while (games.length < maxGames) {
-    const { game, leftover } = buildDoublesGame(remainingPool);
+    const { game, leftover } = buildDoublesGame(remainingPool, options);
     if (!game) break;
     games.push(game);
     remainingPool = leftover;

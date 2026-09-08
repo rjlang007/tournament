@@ -1,6 +1,7 @@
 import { prisma } from "./prisma";
 import { Prisma } from "@prisma/client";
 import { buildQueueBatch, QueuedPlayer } from "./matchmaking";
+import { computeLeaderboard } from "./leaderboard";
 
 type DatabaseClient = typeof prisma | Prisma.TransactionClient;
 
@@ -31,6 +32,15 @@ export async function refillUpcomingQueue(tournamentId: string, minPreview = 4, 
   const slotsToFill = Math.max(0, effectiveMaxPreview - existingUpcoming);
   if (slotsToFill === 0) return { created: 0 };
 
+  const tournament = await prisma.tournament.findUnique({
+    where: { id: tournamentId },
+    select: { scheduledEnd: true },
+  });
+  if (tournament?.scheduledEnd && tournament.scheduledEnd.getTime() - Date.now() < 20 * 60 * 1000) {
+    return { created: 0, remainingInQueue: 0 };
+  }
+  const finalPhase = !!tournament?.scheduledEnd && tournament.scheduledEnd.getTime() - Date.now() <= 45 * 60 * 1000;
+
   const queueEntries = await prisma.queueEntry.findMany({
     where: { tournamentId },
     include: {
@@ -38,13 +48,38 @@ export async function refillUpcomingQueue(tournamentId: string, minPreview = 4, 
         include: {
           gamePlayers: {
             where: { game: { status: "FINISHED" } },
-            select: { id: true },
+              select: { team: true, game: { select: { winningTeam: true } } },
           },
         },
       },
     },
     orderBy: { enqueuedAt: "asc" },
   });
+
+  const finishedGames = await prisma.game.findMany({
+    where: { tournamentId, status: "FINISHED" },
+    select: { players: { select: { playerId: true, team: true } } },
+  });
+  const recentPartners = new Map<string, Set<string>>();
+  const recentOpponents = new Map<string, Set<string>>();
+  for (const game of finishedGames) {
+    const teamA = game.players.filter((player) => player.team === "A").map((player) => player.playerId);
+    const teamB = game.players.filter((player) => player.team === "B").map((player) => player.playerId);
+    for (const team of [teamA, teamB]) {
+      for (const playerId of team) {
+        const partners = recentPartners.get(playerId) ?? new Set<string>();
+        team.filter((id) => id !== playerId).forEach((id) => partners.add(id));
+        recentPartners.set(playerId, partners);
+      }
+    }
+    for (const [team, opponents] of [[teamA, teamB], [teamB, teamA]] as const) {
+      for (const playerId of team) {
+        const previousOpponents = recentOpponents.get(playerId) ?? new Set<string>();
+        opponents.forEach((id) => previousOpponents.add(id));
+        recentOpponents.set(playerId, previousOpponents);
+      }
+    }
+  }
 
   const pool: QueuedPlayer[] = queueEntries
     .filter((q) => q.player.status === "WAITING" && q.player.joinStatus === "APPROVED")
@@ -53,10 +88,31 @@ export async function refillUpcomingQueue(tournamentId: string, minPreview = 4, 
       name: q.player.name,
       skillLevel: q.player.skillLevel,
       gamesPlayed: q.player.gamePlayers.length,
-      joinedAt: q.player.createdAt.getTime(),
+      arrivalAt: q.player.arrivalAt.getTime(),
+      queuedAt: q.enqueuedAt.getTime(),
+      wins: q.player.gamePlayers.filter((game) => game.game.winningTeam === game.team).length,
+      losses: q.player.gamePlayers.filter((game) => !!game.game.winningTeam && game.game.winningTeam !== game.team).length,
+      recentPartnerIds: recentPartners.get(q.player.id) ?? new Set<string>(),
+      recentOpponentIds: recentOpponents.get(q.player.id) ?? new Set<string>(),
     }));
 
-  const { games } = buildQueueBatch(pool, slotsToFill);
+  let leaderIds = new Set<string>();
+  if (finalPhase) {
+    const standings = await computeLeaderboard(tournamentId);
+    const leader = standings[0];
+    if (leader && leader.wins > 0) {
+      leaderIds = new Set(
+        standings
+          .filter((row) => row.wins === leader.wins && row.winPct === leader.winPct && row.losses === leader.losses)
+          .map((row) => row.playerId)
+      );
+    }
+  }
+
+  const { games } = buildQueueBatch(pool, slotsToFill, {
+    finalPhase,
+    leaderIds,
+  });
 
   let created = 0;
   for (const g of games) {

@@ -8,6 +8,7 @@ export type LeaderboardRow = {
   losses: number;
   gamesPlayed: number;
   winPct: number;
+  pointDiff: number;
 };
 
 const UNFINISHED_GAME_STATUSES = ["UPCOMING", "READY", "IN_PROGRESS", "PAUSED"] as const;
@@ -37,10 +38,16 @@ export async function computeLeaderboard(tournamentId: string): Promise<Leaderbo
   const leaderboard: LeaderboardRow[] = players.map((player) => {
     let wins = 0;
     let losses = 0;
+    let pointDiff = 0;
     for (const gp of player.gamePlayers) {
       if (gp.game.status !== "FINISHED" || !gp.game.winningTeam) continue;
       if (gp.game.winningTeam === gp.team) wins++;
       else losses++;
+      if (gp.game.scoreA !== null && gp.game.scoreB !== null) {
+        const ownScore = gp.team === "A" ? gp.game.scoreA : gp.game.scoreB;
+        const opponentScore = gp.team === "A" ? gp.game.scoreB : gp.game.scoreA;
+        pointDiff += Math.max(-5, Math.min(5, ownScore - opponentScore));
+      }
     }
     const gamesPlayed = wins + losses;
     return {
@@ -51,10 +58,11 @@ export async function computeLeaderboard(tournamentId: string): Promise<Leaderbo
       losses,
       gamesPlayed,
       winPct: gamesPlayed > 0 ? Math.round((wins / gamesPlayed) * 1000) / 10 : 0,
+      pointDiff,
     };
   });
 
-  leaderboard.sort((a, b) => b.wins - a.wins || b.winPct - a.winPct || a.losses - b.losses);
+  leaderboard.sort((a, b) => b.wins - a.wins || b.winPct - a.winPct || a.losses - b.losses || b.pointDiff - a.pointDiff);
   return leaderboard;
 }
 
@@ -85,7 +93,8 @@ export function detectPodiumTies(standings: LeaderboardRow[]): TieGroup[] {
       j < standings.length &&
       standings[j].wins === standings[i].wins &&
       standings[j].winPct === standings[i].winPct &&
-      standings[j].losses === standings[i].losses
+      standings[j].losses === standings[i].losses &&
+      standings[j].pointDiff === standings[i].pointDiff
     ) {
       j++;
     }

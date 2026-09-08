@@ -118,6 +118,13 @@ gamesRouter.post("/:id/finish", async (req, res) => {
     scoreB?: number;
   };
 
+  if (!winningTeam || typeof scoreA !== "number" || typeof scoreB !== "number" || !Number.isInteger(scoreA) || !Number.isInteger(scoreB) || scoreA < 0 || scoreB < 0 || scoreA === scoreB) {
+    return res.status(400).json({ error: "A winning team and final, non-tied scores are required." });
+  }
+  if ((winningTeam === "A" && scoreA < scoreB) || (winningTeam === "B" && scoreB < scoreA)) {
+    return res.status(400).json({ error: "The winning team must have the higher score." });
+  }
+
   let game;
   try {
     game = await prisma.$transaction(async (tx) => {

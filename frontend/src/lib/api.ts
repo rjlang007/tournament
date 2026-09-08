@@ -83,6 +83,8 @@ export type Player = {
   status: string;
   tournamentId: string;
   joinStatus?: "PENDING" | "APPROVED" | "REJECTED";
+  arrivalAt?: string;
+  gamesPlayed?: number;
 };
 
 export type Court = {
@@ -115,6 +117,10 @@ export type Tournament = {
   ownerId?: string | null;
   scheduledStart?: string | null;
   scheduledEnd?: string | null;
+  locationName?: string | null;
+  locationAddress?: string | null;
+  locationLatitude?: number | null;
+  locationLongitude?: number | null;
   resultsFinalizedAt?: string | null;
   myMembership?: { joinStatus: "PENDING" | "APPROVED" | "REJECTED"; status: string } | null;
 };
@@ -127,6 +133,7 @@ export type LeaderboardRow = {
   losses: number;
   gamesPlayed: number;
   winPct: number;
+  pointDiff: number;
 };
 
 export type TieGroup = {

@@ -101,6 +101,9 @@ export default function Registration() {
                 <div>
                   <input className="field max-w-[220px] py-1" defaultValue={p.name} onBlur={(event) => updateName(p.id, event.target.value)} />
                   <div className="text-xs text-white/45">{p.contact || "No contact provided"}</div>
+                  <div className="text-[10px] uppercase tracking-[0.12em] text-white/35">
+                    Arrived {p.arrivalAt ? new Date(p.arrivalAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) : "—"} · {p.gamesPlayed ?? 0} games
+                  </div>
                 </div>
               </div>
 

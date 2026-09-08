@@ -39,6 +39,36 @@ tournamentsRouter.get("/:id", async (req, res) => {
   res.json(tournament);
 });
 
+tournamentsRouter.patch("/:id/location", async (req: AuthedRequest, res) => {
+  if (!(await canManageTournament(req, req.params.id))) return res.status(403).json({ error: "You can only edit tournaments you own." });
+  const { locationName, locationAddress, latitude, longitude } = req.body as {
+    locationName?: string | null;
+    locationAddress?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+  };
+  const hasLatitude = latitude !== null && latitude !== undefined;
+  const hasLongitude = longitude !== null && longitude !== undefined;
+  if (hasLatitude !== hasLongitude) {
+    return res.status(400).json({ error: "Both map coordinates are required together." });
+  }
+  const hasCoordinates = hasLatitude && hasLongitude;
+  if (hasCoordinates && (typeof latitude !== "number" || typeof longitude !== "number" || latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180)) {
+    return res.status(400).json({ error: "Map coordinates are invalid." });
+  }
+  const tournament = await prisma.tournament.update({
+    where: { id: req.params.id },
+    data: {
+      locationName: typeof locationName === "string" ? locationName.trim() || null : locationName ?? null,
+      locationAddress: typeof locationAddress === "string" ? locationAddress.trim() || null : locationAddress ?? null,
+      locationLatitude: hasCoordinates ? latitude : null,
+      locationLongitude: hasCoordinates ? longitude : null,
+    },
+  });
+  broadcastTournamentUpdate(tournament.id, "tournament:changed");
+  res.json(tournament);
+});
+
 tournamentsRouter.patch("/:id/status", async (req: AuthedRequest, res) => {
   if (!(await canManageTournament(req, req.params.id))) return res.status(403).json({ error: "You can only edit tournaments you own." });
   const { status } = req.body;
@@ -59,14 +89,6 @@ tournamentsRouter.post("/:id/complete", async (req: AuthedRequest, res) => {
     return res.status(409).json({ error: "Finish or cancel all queued and active games before finalizing.", unfinishedGames });
   }
   const standings = await computeLeaderboard(req.params.id);
-  const ties = detectPodiumTies(standings);
-  if (ties.length > 0) {
-    return res.status(409).json({
-      error: "Resolve the podium tie before finalizing this tournament.",
-      ties,
-      standings,
-    });
-  }
   const tournament = await prisma.tournament.update({
     where: { id: req.params.id },
     data: { status: "COMPLETED", resultsFinalizedAt: new Date(), finalStandings: standings as any },
@@ -105,8 +127,8 @@ tournamentsRouter.get("/:id/summary.csv", async (req: AuthedRequest, res) => {
     ["Finished At", tournament.resultsFinalizedAt?.toISOString() ?? ""].map(csvCell).join(","),
     "",
     ["Final Rankings", "", "", "", "", "", ""].map(csvCell).join(","),
-    ["Rank", "Placement", "Player", "Skill Level", "Games Played", "Wins", "Losses", "Win %"].map(csvCell).join(","),
-    ...standings.map((row, index) => [index + 1, placement(index + 1), row.name, row.skillLevel, row.gamesPlayed, row.wins, row.losses, row.winPct].map(csvCell).join(",")),
+    ["Rank", "Placement", "Player", "Skill Level", "Games Played", "Wins", "Losses", "Win %", "Point Differential"].map(csvCell).join(","),
+    ...standings.map((row, index) => [index + 1, placement(index + 1), row.name, row.skillLevel, row.gamesPlayed, row.wins, row.losses, row.winPct, row.pointDiff].map(csvCell).join(",")),
     "",
     ["Recorded Games", "", "", "", "", "", ""].map(csvCell).join(","),
     ["Match", "Status", "Team A", "Team B", "Score A", "Score B", "Winner"].map(csvCell).join(","),
@@ -132,11 +154,19 @@ tournamentsRouter.patch("/:id/schedule", async (req: AuthedRequest, res) => {
     scheduledStart?: string | null;
     scheduledEnd?: string | null;
   };
+  const startDate = scheduledStart ? new Date(scheduledStart) : null;
+  const endDate = scheduledEnd ? new Date(scheduledEnd) : null;
+  if ((startDate && Number.isNaN(startDate.getTime())) || (endDate && Number.isNaN(endDate.getTime()))) {
+    return res.status(400).json({ error: "Schedule times must be valid dates." });
+  }
+  if (startDate && endDate && endDate <= startDate) {
+    return res.status(400).json({ error: "Tournament end time must be after the start time." });
+  }
   const tournament = await prisma.tournament.update({
     where: { id: req.params.id },
     data: {
-      scheduledStart: scheduledStart === undefined ? undefined : scheduledStart ? new Date(scheduledStart) : null,
-      scheduledEnd: scheduledEnd === undefined ? undefined : scheduledEnd ? new Date(scheduledEnd) : null,
+      scheduledStart: scheduledStart === undefined ? undefined : startDate,
+      scheduledEnd: scheduledEnd === undefined ? undefined : endDate,
     },
   });
   broadcastTournamentUpdate(tournament.id, "tournament:changed");
@@ -178,42 +208,13 @@ tournamentsRouter.get("/:id/finalize/check", async (req, res) => {
 // or manually confirming results instead of waiting for the scheduled
 // end time to trigger the automatic finalize in index.ts).
 //
-// Optional `manualOrder`: a full list of player IDs in the exact order
-// the operator wants them recorded (used when they've manually resolved
-// a podium tie). Any player left out is appended afterward in their
-// normally-computed order, so the frontend only needs to reorder the
-// tied group and can leave everyone else as-is.
 tournamentsRouter.post("/:id/finalize", async (req: AuthedRequest, res) => {
   if (!(await canManageTournament(req, req.params.id))) return res.status(403).json({ error: "You can only finish tournaments you own." });
   const unfinishedGames = await countUnfinishedGames(req.params.id);
   if (unfinishedGames > 0) {
     return res.status(409).json({ error: "Finish or cancel all queued and active games before finalizing.", unfinishedGames });
   }
-  const { manualOrder } = req.body as { manualOrder?: string[] };
-  let standings = await computeLeaderboard(req.params.id);
-
-  if (manualOrder && manualOrder.length > 0) {
-    // manualOrder only lists the tied group being resolved (a contiguous
-    // slice of standings, by construction of detectPodiumTies). Splice
-    // them back into that same slice, in the operator's chosen order,
-    // instead of moving them to the front - everyone else keeps their
-    // normally-computed position.
-    const idSet = new Set(manualOrder);
-    const positions = standings
-      .map((r, i) => (idSet.has(r.playerId) ? i : -1))
-      .filter((i) => i >= 0);
-    const byId = new Map(standings.map((r) => [r.playerId, r]));
-    const replacement = manualOrder
-      .map((id) => byId.get(id))
-      .filter((r): r is LeaderboardRow => !!r);
-
-    if (positions.length === replacement.length && replacement.length > 0) {
-      const start = Math.min(...positions);
-      const next = [...standings];
-      next.splice(start, replacement.length, ...replacement);
-      standings = next;
-    }
-  }
+  const standings = await computeLeaderboard(req.params.id);
 
   const tournament = await prisma.tournament.update({
     where: { id: req.params.id },

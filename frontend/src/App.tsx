@@ -1,4 +1,4 @@
-import { Routes, Route, NavLink, useParams, Navigate, useLocation } from "react-router-dom";
+import { Routes, Route, NavLink, Link, useParams, Navigate, useLocation } from "react-router-dom";
 import { useAuth } from "./context/AuthContext";
 import TournamentSetup from "./pages/TournamentSetup";
 import Registration from "./pages/Registration";
@@ -29,7 +29,7 @@ function Shell() {
     <div className="app-shell">
       <div className="mx-auto max-w-7xl px-4 pt-4 sm:px-6 lg:px-8">
         <nav className="glass-panel tournament-nav sticky top-2 z-20 flex min-w-0 flex-col gap-3 px-3 py-3 sm:top-4 sm:gap-4 sm:px-6 sm:py-4 lg:flex-row lg:items-center lg:justify-between">
-          <div className="flex items-center gap-3">
+          <Link to="/" aria-label="Go to tournament dashboard" className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-ball/20 text-xl shadow-inner shadow-ball/30 ring-1 ring-ball/30">
               🏓
             </div>
@@ -37,7 +37,7 @@ function Shell() {
               <div className="font-display text-xl font-bold tracking-wide text-ball">Dink Board</div>
               <div className="text-[10px] uppercase tracking-[0.24em] text-white/45">Tournament Ops</div>
             </div>
-          </div>
+          </Link>
 
           <div className="mobile-nav-links flex min-w-0 flex-nowrap items-center gap-1 overflow-x-auto pb-1 sm:flex-wrap sm:gap-2">
             {user && (user.role === "ADMIN" || user.role === "SUPERADMIN") && <NavLink to={`${base}/registration`} className={linkClass}>Registration</NavLink>}

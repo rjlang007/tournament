@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api, Tournament } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
 
@@ -62,7 +62,7 @@ export default function TournamentSetup() {
               <div className="text-[10px] uppercase tracking-[0.28em] text-ball/80">Premium tournament platform</div>
               <h1 className="mt-2 font-display text-4xl font-bold tracking-tight text-ball sm:text-5xl">Dink Board</h1>
             </div>
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-ball/20 text-2xl ring-1 ring-ball/20">🏓</div>
+            <Link to="/" aria-label="Go to tournament dashboard" className="flex h-12 w-12 items-center justify-center rounded-2xl bg-ball/20 text-2xl ring-1 ring-ball/20">🏓</Link>
           </div>
 
           <p className="mb-8 max-w-lg text-sm leading-6 text-white/65">

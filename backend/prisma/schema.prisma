@@ -143,6 +143,7 @@ model Player {
   userId       String?
   user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
   joinStatus   PlayerJoinStatus @default(APPROVED)
+  arrivalAt    DateTime     @default(now())
   createdAt    DateTime     @default(now())
 
   gamePlayers      GamePlayer[]
@@ -161,6 +162,10 @@ model Tournament {
   ownerId   String?
   owner     User?             @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   createdAt DateTime          @default(now())
+  locationName     String?
+  locationAddress  String?
+  locationLatitude Float?
+  locationLongitude Float?
 
   // Operator-set tournament window, e.g. 4:00 PM - 9:00 PM. When
   // scheduledEnd passes, results are auto-recorded into finalStandings

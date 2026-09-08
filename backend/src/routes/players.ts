@@ -35,9 +35,12 @@ playersRouter.get("/", attachUser, async (req: AuthedRequest, res) => {
       tournamentId: String(tournamentId),
       ...(req.query.mine === "true" && req.userId ? { userId: req.userId } : {}),
     },
+    include: {
+      gamePlayers: { where: { game: { status: "FINISHED" } }, select: { id: true } },
+    },
     orderBy: { createdAt: "asc" },
   });
-  res.json(players);
+  res.json(players.map(({ gamePlayers, ...player }) => ({ ...player, gamesPlayed: gamePlayers.length })));
 });
 
 // Admin can edit skill level or mark a player as LEFT (opens them up for substitution elsewhere)
@@ -68,7 +71,7 @@ playersRouter.patch("/:id/approval", async (req: AuthedRequest, res) => {
   if (!(await canManageTournament(req, existing.tournamentId))) return res.status(403).json({ error: "You can only edit players in tournaments you own." });
   const player = await prisma.player.update({
     where: { id: req.params.id },
-    data: { joinStatus },
+    data: { joinStatus, ...(joinStatus === "APPROVED" ? { arrivalAt: new Date() } : {}) },
   });
   if (joinStatus === "REJECTED") await prisma.queueEntry.deleteMany({ where: { tournamentId: player.tournamentId, playerId: player.id } });
   if (joinStatus === "APPROVED") {

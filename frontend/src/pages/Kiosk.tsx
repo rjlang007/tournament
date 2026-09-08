@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { api, Game } from "../lib/api";
+import { api, Game, Tournament } from "../lib/api";
 import { useTournamentSocket } from "../lib/socket";
+import TournamentLocationMap from "../components/TournamentLocationMap";
 
 function fmt(seconds: number) {
   const m = Math.floor(seconds / 60).toString().padStart(2, "0");
@@ -16,6 +17,7 @@ export default function Kiosk() {
   const [waitingCount, setWaitingCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [tournament, setTournament] = useState<Tournament | null>(null);
 
   const load = () => {
     setError(null);
@@ -23,11 +25,12 @@ export default function Kiosk() {
       setNowPlaying(r.data.nowPlaying);
       setUpNext(r.data.upNext);
       setWaitingCount(r.data.waitingCount);
-    }).catch(() => setError("Live board is temporarily unavailable.")).finally(() => setLoading(false));
+      return api.get(`/tournaments/${tournamentId}`);
+    }).then((response) => setTournament(response.data)).catch(() => setError("Live board is temporarily unavailable.")).finally(() => setLoading(false));
   };
 
   useEffect(() => { load(); }, [tournamentId]);
-  useTournamentSocket(tournamentId, ["games:changed", "courts:changed"], load);
+  useTournamentSocket(tournamentId, ["games:changed", "courts:changed", "tournament:changed"], load);
 
   useEffect(() => {
     const id = window.setInterval(() => {
@@ -86,6 +89,19 @@ export default function Kiosk() {
       </div>
 
       <p className="text-center text-white/40 text-sm">{waitingCount} players waiting in the pool</p>
+
+      {(tournament?.locationName || tournament?.locationAddress || (tournament?.locationLatitude !== null && tournament?.locationLatitude !== undefined && tournament?.locationLongitude !== null && tournament?.locationLongitude !== undefined)) && (
+        <section className="mx-auto mt-10 max-w-4xl rounded-2xl border border-white/10 bg-black/20 p-4 sm:p-6">
+          <div className="mb-4">
+            <div className="text-[10px] uppercase tracking-[0.25em] text-ball/75">Tournament venue</div>
+            <h2 className="mt-1 font-display text-2xl font-bold text-white">{tournament.locationName || "Playing location"}</h2>
+            {tournament.locationAddress && <p className="mt-1 text-sm text-white/60">{tournament.locationAddress}</p>}
+          </div>
+          {tournament.locationLatitude !== null && tournament.locationLatitude !== undefined && tournament.locationLongitude !== null && tournament.locationLongitude !== undefined && (
+            <TournamentLocationMap latitude={tournament.locationLatitude} longitude={tournament.locationLongitude} />
+          )}
+        </section>
+      )}
     </div>
   );
 }

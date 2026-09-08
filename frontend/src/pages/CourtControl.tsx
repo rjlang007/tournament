@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { api, Court, FinalizeCheck, Game, Player, Tournament, TieGroup } from "../lib/api";
 import { useTournamentSocket } from "../lib/socket";
 import SpinWheel from "../components/SpinWheel";
+import TournamentLocationMap from "../components/TournamentLocationMap";
 
 function fmt(seconds: number) {
   const m = Math.floor(seconds / 60).toString().padStart(2, "0");
@@ -52,9 +53,15 @@ export default function CourtControl() {
   const [queueEntries, setQueueEntries] = useState<Array<{ id: string; playerId: string; player: { id: string; name: string; skillLevel: string } }>>([]);
   const [waitingCount, setWaitingCount] = useState(0);
   const [finishingGame, setFinishingGame] = useState<Game | null>(null);
+  const [scoreA, setScoreA] = useState("");
+  const [scoreB, setScoreB] = useState("");
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleStart, setScheduleStart] = useState("");
   const [scheduleEnd, setScheduleEnd] = useState("");
+  const [locationName, setLocationName] = useState("");
+  const [locationAddress, setLocationAddress] = useState("");
+  const [locationLatitude, setLocationLatitude] = useState<number | null>(null);
+  const [locationLongitude, setLocationLongitude] = useState<number | null>(null);
 
   // Finalize flow: null = closed. Otherwise holds the preview from
   // /finalize/check (current standings + any podium ties) so the operator
@@ -72,7 +79,13 @@ export default function CourtControl() {
       setWaitingCount(r.data.waitingCount);
     });
     api.get(`/queue/${tournamentId}`).then((r) => setQueueEntries(r.data));
-    api.get(`/tournaments/${tournamentId}`).then((r) => setTournament(r.data));
+    api.get(`/tournaments/${tournamentId}`).then((r) => {
+      setTournament(r.data);
+      setLocationName(r.data.locationName ?? "");
+      setLocationAddress(r.data.locationAddress ?? "");
+      setLocationLatitude(r.data.locationLatitude ?? null);
+      setLocationLongitude(r.data.locationLongitude ?? null);
+    });
   };
   useEffect(() => { load(); }, [tournamentId]);
   useTournamentSocket(
@@ -122,10 +135,22 @@ export default function CourtControl() {
     await api.post(`/games/${gameId}/${action}`);
   };
 
-  const confirmFinish = async (winningTeam: "A" | "B" | null) => {
+  const confirmFinish = async (winningTeam: "A" | "B") => {
     if (!finishingGame) return;
-    await api.post(`/games/${finishingGame.id}/finish`, winningTeam ? { winningTeam } : {});
+    const finalScoreA = Number(scoreA);
+    const finalScoreB = Number(scoreB);
+    if (!Number.isInteger(finalScoreA) || !Number.isInteger(finalScoreB) || finalScoreA < 0 || finalScoreB < 0 || finalScoreA === finalScoreB) {
+      window.alert("Enter two different final scores before recording the winner.");
+      return;
+    }
+    if ((winningTeam === "A" && finalScoreA < finalScoreB) || (winningTeam === "B" && finalScoreB < finalScoreA)) {
+      window.alert("The winning team must have the higher score.");
+      return;
+    }
+    await api.post(`/games/${finishingGame.id}/finish`, { winningTeam, scoreA: finalScoreA, scoreB: finalScoreB });
     setFinishingGame(null);
+    setScoreA("");
+    setScoreB("");
   };
 
   const cancelGame = async (gameId: string) => {
@@ -193,6 +218,16 @@ export default function CourtControl() {
       scheduledEnd: scheduleEnd ? new Date(scheduleEnd).toISOString() : null,
     });
     setScheduleOpen(false);
+    load();
+  };
+
+  const saveLocation = async () => {
+    await api.patch(`/tournaments/${tournamentId}/location`, {
+      locationName,
+      locationAddress,
+      latitude: locationLatitude,
+      longitude: locationLongitude,
+    });
     load();
   };
 
@@ -345,6 +380,30 @@ export default function CourtControl() {
         </div>
       )}
 
+      <section className="mb-6 glass-panel p-4 sm:p-5">
+        <div className="mb-4">
+          <div className="text-xs uppercase tracking-[0.2em] text-white/50">Tournament venue</div>
+          <h3 className="mt-1 font-display text-xl font-bold text-white">Set the playing location</h3>
+          <p className="mt-1 text-sm text-white/50">Only tournament administrators can edit this venue. Click the map to place the pin.</p>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
+          <div className="space-y-3">
+            <div><label className="field-label">Venue name</label><input className="field" value={locationName} onChange={(event) => setLocationName(event.target.value)} placeholder="e.g. Riverside Sports Center" /></div>
+            <div><label className="field-label">Address</label><textarea className="field min-h-24" value={locationAddress} onChange={(event) => setLocationAddress(event.target.value)} placeholder="Street, city, province" /></div>
+            <div className="text-xs text-white/40">
+              {locationLatitude !== null && locationLongitude !== null ? `Pinned at ${locationLatitude.toFixed(5)}, ${locationLongitude.toFixed(5)}` : "No map pin selected yet."}
+            </div>
+            <button onClick={saveLocation} className="action-button w-full sm:w-auto">Save venue</button>
+          </div>
+          <TournamentLocationMap
+            latitude={locationLatitude}
+            longitude={locationLongitude}
+            editable
+            onChange={(latitude, longitude) => { setLocationLatitude(latitude); setLocationLongitude(longitude); }}
+          />
+        </div>
+      </section>
+
       {finalizeCheck && (
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={closeFinalize}>
           <div
@@ -357,9 +416,7 @@ export default function CourtControl() {
                   {finalizeCheck.ties.length > 0 ? "There's a tie for the podium" : "Finalize results?"}
                 </h3>
                 <p className="text-xs text-white/40 mb-4">
-                  This stops the tournament and locks in the leaderboard as the official final
-                  standings. Finish or cancel all queued and active games first so no late result
-                  is missing from the official ranking.
+                  This stops the tournament and locks in the official standings. Exact final ties remain shared placements; no manual ordering is used.
                 </p>
 
                 {finalizeCheck.unfinishedGames > 0 && (
@@ -381,22 +438,7 @@ export default function CourtControl() {
                         </div>
                       ))}
                     </div>
-                    <div className="flex gap-2 flex-wrap">
-                      <button
-                        disabled={finalizeBusy}
-                        onClick={() => playTiebreaker(group)}
-                        className="bg-ball text-neutral-900 font-semibold rounded-lg px-3 py-1.5 text-xs disabled:opacity-50"
-                      >
-                        Play a tiebreaker game
-                      </button>
-                      <button
-                        disabled={finalizeBusy}
-                        onClick={() => startManualOrder(group)}
-                        className="bg-white/10 rounded-lg px-3 py-1.5 text-xs disabled:opacity-50"
-                      >
-                        Manually set order
-                      </button>
-                    </div>
+                    <div className="text-xs text-white/45">The final phase already distributed these players across balanced games. If their final metrics remain identical, they share the placement.</div>
                   </div>
                 ))}
 
@@ -409,7 +451,7 @@ export default function CourtControl() {
                     onClick={finalizeAnyway}
                     className="bg-red-500/80 rounded-lg px-4 py-2 text-sm font-semibold disabled:opacity-50"
                   >
-                    {finalizeCheck.ties.length > 0 ? "Finalize anyway (keep tie)" : "Yes, finalize now"}
+                    Finalize results
                   </button>
                 </div>
               </>
@@ -482,7 +524,11 @@ export default function CourtControl() {
         <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4" onClick={() => setFinishingGame(null)}>
           <div className="bg-neutral-950 border border-white/10 rounded-2xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
             <h3 className="font-display text-lg font-bold mb-1">Who won?</h3>
-            <p className="text-xs text-white/40 mb-4">This records the result for the leaderboard/bracket.</p>
+            <p className="text-xs text-white/40 mb-4">Enter the final score so standings can separate equal win records fairly.</p>
+            <div className="grid grid-cols-2 gap-3 mb-4">
+              <label className="text-xs text-white/50">Team A score<input type="number" min="0" value={scoreA} onChange={(event) => setScoreA(event.target.value)} className="field mt-1" /></label>
+              <label className="text-xs text-white/50">Team B score<input type="number" min="0" value={scoreB} onChange={(event) => setScoreB(event.target.value)} className="field mt-1" /></label>
+            </div>
             <div className="grid grid-cols-2 gap-3 mb-3">
               <button
                 onClick={() => confirmFinish("A")}
@@ -499,10 +545,7 @@ export default function CourtControl() {
                 <TeamNames game={finishingGame} team="B" />
               </button>
             </div>
-            <div className="flex justify-between items-center">
-              <button onClick={() => confirmFinish(null)} className="text-xs text-white/40 hover:text-white/70">
-                Skip / no result
-              </button>
+            <div className="flex justify-end items-center">
               <button onClick={() => setFinishingGame(null)} className="text-xs text-white/40 hover:text-white/70">
                 Cancel
               </button>
