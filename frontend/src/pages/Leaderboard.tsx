@@ -88,10 +88,18 @@ export default function Leaderboard() {
   const { tournamentId } = useParams();
   const [liveRows, setLiveRows] = useState<LeaderboardRow[]>([]);
   const [final, setFinal] = useState<FinalResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const load = () => {
-    api.get(`/leaderboard/${tournamentId}`).then((r) => setLiveRows(r.data));
-    api.get(`/leaderboard/${tournamentId}/final`).then((r) => setFinal(r.data));
+    setError(null);
+    return Promise.all([
+      api.get(`/leaderboard/${tournamentId}`),
+      api.get(`/leaderboard/${tournamentId}/final`),
+    ]).then(([liveResponse, finalResponse]) => {
+      setLiveRows(liveResponse.data);
+      setFinal(finalResponse.data);
+    }).catch(() => setError("Results are temporarily unavailable.")).finally(() => setLoading(false));
   };
   useEffect(() => { load(); }, [tournamentId]);
   useTournamentSocket(tournamentId, ["games:changed", "tournament:changed"], load);
@@ -117,6 +125,10 @@ export default function Leaderboard() {
           </div>
         )}
       </header>
+
+      {error && <div className="error-panel flex flex-wrap items-center justify-between gap-3">{error}<button type="button" onClick={load} className="secondary-button px-3 py-1.5 text-xs">Retry</button></div>}
+
+      {loading ? <LeaderboardSkeleton /> : <>
 
       {isFinal && final?.standings && (
         <section className="overflow-hidden rounded-3xl border border-ball/30 bg-gradient-to-br from-ball/20 via-white/5 to-emerald-500/10 p-6 shadow-2xl shadow-ball/10 sm:p-8">
@@ -198,6 +210,14 @@ export default function Leaderboard() {
 
         {rows.length === 0 && <p className="p-4 text-sm text-white/45">No results yet.</p>}
       </section>
+      </>}
     </div>
   );
+}
+
+function LeaderboardSkeleton() {
+  return <div className="space-y-4">
+    <div className="grid gap-4 md:grid-cols-3">{[0, 1, 2].map((item) => <div key={item} className="glass-panel h-28 p-4"><div className="skeleton h-3 w-24" /><div className="skeleton mt-5 h-7 w-32" /></div>)}</div>
+    <div className="glass-panel space-y-3 p-5">{[0, 1, 2, 3, 4].map((item) => <div key={item} className="skeleton h-10 w-full" />)}</div>
+  </div>;
 }

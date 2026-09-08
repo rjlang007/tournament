@@ -14,13 +14,17 @@ export default function Kiosk() {
   const [nowPlaying, setNowPlaying] = useState<Game[]>([]);
   const [upNext, setUpNext] = useState<Game[]>([]);
   const [waitingCount, setWaitingCount] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const load = () =>
-    api.get(`/games/board/${tournamentId}`).then((r) => {
+  const load = () => {
+    setError(null);
+    return api.get(`/games/board/${tournamentId}`).then((r) => {
       setNowPlaying(r.data.nowPlaying);
       setUpNext(r.data.upNext);
       setWaitingCount(r.data.waitingCount);
-    });
+    }).catch(() => setError("Live board is temporarily unavailable.")).finally(() => setLoading(false));
+  };
 
   useEffect(() => { load(); }, [tournamentId]);
   useTournamentSocket(tournamentId, ["games:changed", "courts:changed"], load);
@@ -38,10 +42,19 @@ export default function Kiosk() {
 
   return (
     <div className="min-h-[calc(100vh-65px)] bg-court-bg p-4 sm:p-8">
-      <h1 className="font-display text-3xl font-bold text-ball mb-6 text-center tracking-wide">NOW PLAYING</h1>
-      <div className="mb-10 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 sm:gap-5">
-        {nowPlaying.map((g) => (
-          <div key={g.id} className="bg-black/30 border-2 border-court-line/20 rounded-2xl p-5 text-center">
+      <header className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="mb-1 text-[10px] uppercase tracking-[0.28em] text-ball/75">Live tournament board</div>
+          <h1 className="font-display text-3xl font-bold tracking-wide text-ball sm:text-4xl">NOW PLAYING</h1>
+        </div>
+        <div className="flex items-center gap-2 rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1.5 text-xs text-emerald-200">
+          <span className="live-dot" /> Live
+        </div>
+      </header>
+      {error && <div className="error-panel mb-5 flex flex-wrap items-center justify-between gap-3">{error}<button type="button" onClick={load} className="secondary-button px-3 py-1.5 text-xs">Retry</button></div>}
+      {loading ? <KioskSkeleton /> : <div className="mb-10 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 sm:gap-5">
+        {nowPlaying.map((g, index) => (
+          <div key={g.id} style={{ animationDelay: `${index * 70}ms` }} className="glass-panel animate-[card-rise_420ms_ease_both] border-2 border-court-line/20 bg-black/30 p-5 text-center">
             <div className="text-xs uppercase text-white/50 tracking-widest mb-2">{g.court?.label ?? "Court"}</div>
             <Names game={g} team="A" />
             <div className="text-ball font-display font-bold text-sm my-1">VS</div>
@@ -50,8 +63,8 @@ export default function Kiosk() {
             <div className={`text-xs mt-1 uppercase tracking-widest ${g.status === "PAUSED" ? "text-yellow-400" : "text-green-400"}`}>{g.status}</div>
           </div>
         ))}
-        {nowPlaying.length === 0 && <p className="col-span-full text-center text-white/40">No games in progress</p>}
-      </div>
+        {nowPlaying.length === 0 && <p className="col-span-full rounded-2xl border border-dashed border-white/10 p-10 text-center text-white/40">No games in progress</p>}
+      </div>}
 
       <h2 className="mb-4 text-center font-display text-2xl font-bold tracking-wide text-white">UP NEXT · 3 LINEUPS</h2>
       <div className="mb-8 grid grid-cols-1 gap-3 sm:grid-cols-2 md:grid-cols-3 sm:gap-4">
@@ -75,6 +88,12 @@ export default function Kiosk() {
       <p className="text-center text-white/40 text-sm">{waitingCount} players waiting in the pool</p>
     </div>
   );
+}
+
+function KioskSkeleton() {
+  return <div className="mb-10 grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 sm:gap-5">
+    {[0, 1, 2].map((item) => <div key={item} className="glass-panel h-56 p-5"><div className="skeleton mx-auto h-3 w-20" /><div className="skeleton mx-auto mt-8 h-5 w-36" /><div className="skeleton mx-auto mt-3 h-5 w-28" /><div className="skeleton mx-auto mt-8 h-10 w-24" /></div>)}
+  </div>;
 }
 
 function Names({ game, team, small }: { game: Game; team: "A" | "B"; small?: boolean }) {
