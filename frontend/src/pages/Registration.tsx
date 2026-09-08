@@ -37,8 +37,9 @@ export default function Registration() {
   };
 
   const removePlayer = async (id: string) => {
-    if (!window.confirm("Remove this player from the tournament roster?")) return;
+    if (!window.confirm("Permanently remove this player from the tournament roster? Their roster record and active queue/bracket entries will be deleted.")) return;
     await api.patch(`/players/${id}/remove`);
+    load();
   };
 
   const updateName = async (id: string, name: string) => {

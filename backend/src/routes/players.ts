@@ -79,23 +79,26 @@ playersRouter.patch("/:id/approval", async (req: AuthedRequest, res) => {
   res.json(player);
 });
 
-playersRouter.patch("/:id/remove", async (req: AuthedRequest, res) => {
+async function permanentlyRemovePlayer(req: AuthedRequest, res: any) {
   const existing = await prisma.player.findUnique({ where: { id: req.params.id }, select: { tournamentId: true } });
   if (!existing) return res.status(404).json({ error: "Player not found." });
   if (!(await canManageTournament(req, existing.tournamentId))) return res.status(403).json({ error: "You can only remove players from tournaments you own." });
-  const player = await prisma.player.update({ where: { id: req.params.id }, data: { status: "LEFT", joinStatus: "REJECTED" } });
-  await prisma.queueEntry.deleteMany({ where: { tournamentId: player.tournamentId, playerId: player.id } });
-  broadcastTournamentUpdate(player.tournamentId, "players:changed");
-  broadcastTournamentUpdate(player.tournamentId, "queue:changed");
-  res.json(player);
-});
+
+  await prisma.$transaction(async (transaction) => {
+    await transaction.queueEntry.deleteMany({ where: { playerId: req.params.id } });
+    await transaction.gamePlayer.deleteMany({ where: { playerId: req.params.id } });
+    await transaction.bracketEntry.deleteMany({ where: { playerAId: req.params.id } });
+    await transaction.bracketEntry.updateMany({ where: { playerBId: req.params.id }, data: { playerBId: null } });
+    await transaction.player.delete({ where: { id: req.params.id } });
+  });
+
+  broadcastTournamentUpdate(existing.tournamentId, "players:changed");
+  broadcastTournamentUpdate(existing.tournamentId, "queue:changed");
+  res.json({ ok: true });
+}
+
+playersRouter.patch("/:id/remove", permanentlyRemovePlayer);
 
 playersRouter.delete("/:id", async (req: AuthedRequest, res) => {
-  const existing = await prisma.player.findUnique({ where: { id: req.params.id }, select: { tournamentId: true } });
-  if (!existing) return res.status(404).json({ error: "Player not found." });
-  if (!(await canManageTournament(req, existing.tournamentId))) return res.status(403).json({ error: "You can only remove players from tournaments you own." });
-  const player = await prisma.player.update({ where: { id: req.params.id }, data: { status: "LEFT", joinStatus: "REJECTED" } });
-  await prisma.queueEntry.deleteMany({ where: { tournamentId: player.tournamentId, playerId: player.id } });
-  broadcastTournamentUpdate(player.tournamentId, "players:changed");
-  res.json(player);
+  return permanentlyRemovePlayer(req, res);
 });
