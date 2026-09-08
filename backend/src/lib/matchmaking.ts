@@ -1,0 +1,201 @@
+import { SkillLevel } from "@prisma/client";
+
+export type QueuedPlayer = {
+  id: string;
+  name: string;
+  skillLevel: SkillLevel;
+  gamesPlayed: number;
+  joinedAt: number;
+};
+
+export type ProposedPairing = {
+  playerA: QueuedPlayer;
+  playerB: QueuedPlayer;
+};
+
+/**
+ * Skill-pairing rule (as confirmed with the tournament director):
+ *
+ *   ADVANCE  <-> BEGINNER   allowed
+ *   AVERAGE  <-> AVERAGE    allowed
+ *   AVERAGE  <-> BEGINNER   allowed
+ *
+ *   ADVANCE  <-> ADVANCE    NOT allowed
+ *   ADVANCE  <-> AVERAGE    NOT allowed
+ *   BEGINNER <-> BEGINNER   NOT allowed
+ *
+ * In short: an Advance player is always balanced out with a Beginner.
+ * Average is the "flexible" tier that can play Average or Beginner.
+ * No two players of the exact same level pair up, except Average-Average.
+ */
+export function isEligiblePair(a: SkillLevel, b: SkillLevel): boolean {
+  const pair = [a, b].sort().join("-");
+  const allowed = new Set([
+    "ADVANCE-BEGINNER",
+    "AVERAGE-AVERAGE",
+    "AVERAGE-BEGINNER",
+  ]);
+  return allowed.has(pair);
+}
+
+/** Numeric skill score used only to compare overall TEAM strength (not for pairing eligibility). */
+const SKILL_SCORE: Record<SkillLevel, number> = {
+  BEGINNER: 1,
+  AVERAGE: 2,
+  ADVANCE: 3,
+};
+
+function pairScore(pair: ProposedPairing): number {
+  return SKILL_SCORE[pair.playerA.skillLevel] + SKILL_SCORE[pair.playerB.skillLevel];
+}
+
+/** Fisher-Yates shuffle - this is the "bunot-bunot" / spin-the-wheel draw. */
+export function shuffle<T>(arr: T[]): T[] {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy;
+}
+
+/**
+ * Greedily builds as many eligible 1v1 individual pairings as possible from
+ * a shuffled pool. Returns the pairings plus whoever couldn't be matched
+ * this round (e.g. an odd Advance-heavy pool with no Beginners left).
+ *
+ * This produces the two INDIVIDUAL opponents. To build a doubles game
+ * (2v2), call this twice more to pick each side's partner, or use
+ * buildDoublesGame() below which composes a balanced 4-player game.
+ */
+export function drawEligiblePairs(pool: QueuedPlayer[]): {
+  pairs: ProposedPairing[];
+  leftover: QueuedPlayer[];
+} {
+  const shuffled = shuffle(pool);
+  const used = new Set<string>();
+  const pairs: ProposedPairing[] = [];
+
+  for (let i = 0; i < shuffled.length; i++) {
+    const a = shuffled[i];
+    if (used.has(a.id)) continue;
+    for (let j = i + 1; j < shuffled.length; j++) {
+      const b = shuffled[j];
+      if (used.has(b.id)) continue;
+      if (isEligiblePair(a.skillLevel, b.skillLevel)) {
+        pairs.push({ playerA: a, playerB: b });
+        used.add(a.id);
+        used.add(b.id);
+        break;
+      }
+    }
+  }
+
+  const leftover = shuffled.filter((p) => !used.has(p.id));
+  return { pairs, leftover };
+}
+
+export type DoublesGame = {
+  teamA: [QueuedPlayer, QueuedPlayer];
+  teamB: [QueuedPlayer, QueuedPlayer];
+};
+
+/**
+ * Builds one 2v2 doubles game out of a pool: draws two eligible partner
+ * pairs first (each pair is a valid teammate combo under the skill rule),
+ * then matches up the two PAIRS whose combined skill score is closest,
+ * so Team A and Team B are an even matchup overall - not just a rule that
+ * each individual pair is internally eligible (a random draw could
+ * otherwise put e.g. two Advance-anchored pairs against two
+ * Average-Beginner pairs, which is a lopsided game even though every
+ * individual pairing was "legal"). Ties are broken randomly, and which
+ * matched pair becomes "Team A" vs "Team B" is a coin flip.
+ *
+ * Returns null if the pool doesn't contain two eligible partner-pairs.
+ */
+export function buildDoublesGame(pool: QueuedPlayer[]): {
+  game: DoublesGame | null;
+  leftover: QueuedPlayer[];
+} {
+  if (pool.length < 4) {
+    return { game: null, leftover: pool };
+  }
+  const shuffled = shuffle(pool);
+  const candidates: Array<{ teamA: [QueuedPlayer, QueuedPlayer]; teamB: [QueuedPlayer, QueuedPlayer]; diff: number; maxGames: number; totalGames: number; arrival: number }> = [];
+
+  // Evaluate complete four-player games instead of committing to the first
+  // legal pair found. This avoids a greedy pairing leaving an unbalanced game
+  // or making a valid four-player lineup impossible later in the queue.
+  for (let a = 0; a < shuffled.length; a++) {
+    for (let b = a + 1; b < shuffled.length; b++) {
+      if (!isEligiblePair(shuffled[a].skillLevel, shuffled[b].skillLevel)) continue;
+      for (let c = 0; c < shuffled.length; c++) {
+        if (c === a || c === b) continue;
+        for (let d = c + 1; d < shuffled.length; d++) {
+          if (d === a || d === b || !isEligiblePair(shuffled[c].skillLevel, shuffled[d].skillLevel)) continue;
+          const teamA: [QueuedPlayer, QueuedPlayer] = [shuffled[a], shuffled[b]];
+          const teamB: [QueuedPlayer, QueuedPlayer] = [shuffled[c], shuffled[d]];
+          const selected = [...teamA, ...teamB];
+          candidates.push({
+            teamA,
+            teamB,
+            diff: Math.abs(pairScore({ playerA: teamA[0], playerB: teamA[1] }) - pairScore({ playerA: teamB[0], playerB: teamB[1] })),
+            maxGames: Math.max(...selected.map((player) => player.gamesPlayed)),
+            totalGames: selected.reduce((sum, player) => sum + player.gamesPlayed, 0),
+            arrival: Math.max(...selected.map((player) => player.joinedAt)),
+          });
+        }
+      }
+    }
+  }
+
+  if (candidates.length === 0) return { game: null, leftover: pool };
+  const bestMaxGames = Math.min(...candidates.map((candidate) => candidate.maxGames));
+  const fairnessCandidates = candidates.filter((candidate) => candidate.maxGames === bestMaxGames);
+  const bestTotalGames = Math.min(...fairnessCandidates.map((candidate) => candidate.totalGames));
+  const balancedCandidates = fairnessCandidates.filter((candidate) => candidate.totalGames === bestTotalGames);
+  const bestDiff = Math.min(...balancedCandidates.map((candidate) => candidate.diff));
+  const skillBalancedCandidates = balancedCandidates.filter((candidate) => candidate.diff === bestDiff);
+  const earliestArrival = Math.min(...skillBalancedCandidates.map((candidate) => candidate.arrival));
+  const fairCandidates = skillBalancedCandidates.filter((candidate) => candidate.arrival === earliestArrival);
+  const best = shuffle(fairCandidates)[0];
+  const [teamPairA, teamPairB] = shuffle([best.teamA, best.teamB]);
+  const remaining = pool.filter(
+    (p) =>
+      ![
+        teamPairA[0].id,
+        teamPairA[1].id,
+        teamPairB[0].id,
+        teamPairB[1].id,
+      ].includes(p.id)
+  );
+  return {
+    game: {
+      teamA: teamPairA,
+      teamB: teamPairB,
+    },
+    leftover: remaining,
+  };
+}
+
+/**
+ * Fills as many doubles games as the number of available (enabled, free)
+ * courts / upcoming slots allows, from a waiting pool. Used both for
+ * "next 4-6 games" preview and for actually assigning players to a court.
+ */
+export function buildQueueBatch(
+  pool: QueuedPlayer[],
+  maxGames: number
+): { games: DoublesGame[]; leftover: QueuedPlayer[] } {
+  let remainingPool = [...pool];
+  const games: DoublesGame[] = [];
+
+  while (games.length < maxGames) {
+    const { game, leftover } = buildDoublesGame(remainingPool);
+    if (!game) break;
+    games.push(game);
+    remainingPool = leftover;
+  }
+
+  return { games, leftover: remainingPool };
+}

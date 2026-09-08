@@ -1,0 +1,3 @@
+CREATE TYPE "PlayerJoinStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED');
+
+ALTER TABLE "Player" ADD COLUMN "joinStatus" "PlayerJoinStatus" NOT NULL DEFAULT 'APPROVED';

@@ -1,0 +1,324 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SkillLevel {
+  BEGINNER
+  AVERAGE
+  ADVANCE
+}
+
+enum TournamentType {
+  RANDOM_PAIRING
+  FIXED_BRACKET
+}
+
+enum TournamentStatus {
+  SETUP
+  ACTIVE
+  COMPLETED
+}
+
+enum PlayerStatus {
+  WAITING     // in the general pool, not yet queued for a game
+  QUEUED      // assigned to an upcoming game
+  PLAYING     // currently on court
+  RESTING     // temporarily out (bathroom, break) - stays out of auto-matchmaking
+  LEFT        // gone home / withdrew - eligible for substitution
+}
+
+enum GameStatus {
+  UPCOMING     // sits in the "next 4-6 games" preview, not yet on a court
+  READY        // assigned to a court, waiting for staff to press Start
+  IN_PROGRESS
+  PAUSED
+  FINISHED
+  CANCELLED
+}
+
+enum GameTeam {
+  A
+  B
+}
+
+enum UserRole {
+  SUPERADMIN
+  ADMIN
+  PLAYER
+}
+
+enum PlayerJoinStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  EXPIRED
+  SUSPENDED
+}
+
+model User {
+  id              String   @id @default(uuid())
+  username        String   @unique
+  passwordHash    String
+  bio             String?  @default("")
+  avatarUrl       String?
+  defaultAvatarKey String   @default("panda")
+  role            UserRole @default(PLAYER)
+  createdAt       DateTime @default(now())
+  trialStartedAt  DateTime?
+  subscriptionExpiresAt DateTime?
+  subscriptionStatus SubscriptionStatus?
+
+  ownedTournaments Tournament[]
+  playerProfiles   Player[]
+  tournamentPosts  TournamentPost[]
+  registrations    RegistrationSubmission[]
+}
+
+model PlatformSetting {
+  id                    String   @id @default("platform")
+  monthlyPriceCents     Int      @default(0)
+  updatedAt             DateTime @updatedAt
+}
+
+model TournamentPost {
+  id                 String   @id @default(uuid())
+  hostId             String
+  host               User     @relation(fields: [hostId], references: [id], onDelete: Cascade)
+  title              String
+  description        String
+  details            String?
+  location           String
+  amount             String?
+  registrationLink   String?
+  registrationFields Json?
+  createdAt          DateTime @default(now())
+
+  photos       TournamentPhoto[]
+  submissions  RegistrationSubmission[]
+}
+
+model TournamentPhoto {
+  id         String   @id @default(uuid())
+  postId     String
+  post       TournamentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  url        String
+  storedFile String
+  uploadedAt DateTime @default(now())
+
+  @@index([postId])
+  @@index([uploadedAt])
+}
+
+model RegistrationSubmission {
+  id          String   @id @default(uuid())
+  postId      String
+  post        TournamentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  answers     Json?
+  submittedAt DateTime @default(now())
+
+  @@index([postId])
+  @@unique([postId, userId])
+}
+
+model Player {
+  id           String       @id @default(uuid())
+  name         String
+  contact      String?
+  skillLevel   SkillLevel
+  status       PlayerStatus @default(WAITING)
+  tournamentId String
+  tournament   Tournament   @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  userId       String?
+  user         User?        @relation(fields: [userId], references: [id], onDelete: SetNull)
+  joinStatus   PlayerJoinStatus @default(APPROVED)
+  createdAt    DateTime     @default(now())
+
+  gamePlayers      GamePlayer[]
+  bracketEntries   BracketEntry[]
+  queueEntries     QueueEntry[]
+
+  @@index([tournamentId])
+  @@unique([tournamentId, userId])
+}
+
+model Tournament {
+  id        String            @id @default(uuid())
+  name      String
+  type      TournamentType
+  status    TournamentStatus  @default(SETUP)
+  ownerId   String?
+  owner     User?             @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  createdAt DateTime          @default(now())
+
+  // Operator-set tournament window, e.g. 4:00 PM - 9:00 PM. When
+  // scheduledEnd passes, results are auto-recorded into finalStandings
+  // unless the operator extends scheduledEnd first (see /extend route).
+  scheduledStart     DateTime?
+  scheduledEnd       DateTime?
+  resultsFinalizedAt DateTime?
+  finalStandings     Json?
+
+  players    Player[]
+  courts     Court[]
+  games      Game[]
+  brackets   Bracket[]
+  queue      QueueEntry[]
+  raffleDraws RaffleDraw[]
+
+  @@index([ownerId])
+}
+
+model Court {
+  id           String     @id @default(uuid())
+  label        String     // e.g. "Court 1"
+  isEnabled    Boolean    @default(true)
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+
+  games Game[]
+
+  @@index([tournamentId])
+}
+
+model Game {
+  id           String     @id @default(uuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  courtId      String?
+  court        Court?     @relation(fields: [courtId], references: [id])
+  bracketMatchId String?  @unique
+  bracketMatch BracketMatch? @relation(fields: [bracketMatchId], references: [id])
+
+  status        GameStatus @default(UPCOMING)
+  isTiebreaker  Boolean    @default(false)
+  queuePosition Int?       // ordering within the "next 4-6" preview
+
+  durationSeconds   Int       @default(900) // default 15-minute timer, staff-editable
+  remainingSeconds  Int       @default(900)
+  startedAt         DateTime?
+  pausedAt          DateTime?
+  finishedAt        DateTime?
+
+  winningTeam GameTeam?
+  scoreA      Int?
+  scoreB      Int?
+
+  createdAt DateTime @default(now())
+
+  players GamePlayer[]
+
+  @@index([tournamentId, status])
+  @@index([courtId])
+}
+
+model GamePlayer {
+  id       String   @id @default(uuid())
+  gameId   String
+  game     Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  playerId String
+  player   Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  team     GameTeam
+
+  @@unique([gameId, playerId])
+  @@index([playerId])
+}
+
+model RaffleDraw {
+  id               String     @id @default(uuid())
+  tournamentId     String
+  tournament       Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  prizeDescription String
+  winnerName       String
+  participantNames Json
+  createdAt        DateTime   @default(now())
+
+  @@index([tournamentId, createdAt])
+}
+
+// Simple FIFO / priority queue of players waiting to be matched into the
+// next UPCOMING game slots for RANDOM_PAIRING tournaments.
+model QueueEntry {
+  id           String     @id @default(uuid())
+  tournamentId String
+  tournament   Tournament @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  playerId     String
+  player       Player     @relation(fields: [playerId], references: [id], onDelete: Cascade)
+  enqueuedAt   DateTime   @default(now())
+
+  @@unique([tournamentId, playerId])
+}
+
+// --- Fixed bracket tournaments ---
+
+enum BracketFormat {
+  SINGLE_ELIMINATION
+  DOUBLE_ELIMINATION
+  ROUND_ROBIN
+}
+
+model Bracket {
+  id           String        @id @default(uuid())
+  tournamentId String
+  tournament   Tournament    @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  name         String        @default("Main Bracket")
+  format       BracketFormat @default(SINGLE_ELIMINATION)
+  createdAt    DateTime      @default(now())
+
+  entries BracketEntry[]
+  matches BracketMatch[]
+}
+
+// A bracket "entry" is a fixed pair (team) registered together before the draw.
+model BracketEntry {
+  id        String   @id @default(uuid())
+  bracketId String
+  bracket   Bracket  @relation(fields: [bracketId], references: [id], onDelete: Cascade)
+  seed      Int?
+  teamName  String?
+
+  playerAId String
+  playerA   Player @relation(fields: [playerAId], references: [id])
+
+  // player B is optional at creation time (can be filled in later / substituted)
+  playerBId String?
+}
+
+model BracketMatch {
+  id        String  @id @default(uuid())
+  bracketId String
+  bracket   Bracket @relation(fields: [bracketId], references: [id], onDelete: Cascade)
+
+  // "WINNERS" | "LOSERS" | "GRAND_FINAL" | "ROUND_ROBIN"
+  bracketSide String @default("WINNERS")
+  round       Int
+  slot        Int     // position within the round/side
+  label       String? // display label, e.g. "Round 1", "Losers Round 2", "Grand Final"
+
+  // Where the WINNER of this match goes next, and which slot they fill there.
+  nextMatchId String?
+  nextSlot    String? // "A" | "B"
+
+  // Double-elimination only: where the LOSER of this match drops to.
+  loserNextMatchId String?
+  loserNextSlot    String? // "A" | "B"
+
+  entryAId      String?
+  entryBId      String?
+  winnerEntryId String? // set once this match has a result (incl. byes)
+
+  game Game?
+
+  @@index([bracketId, bracketSide, round])
+}

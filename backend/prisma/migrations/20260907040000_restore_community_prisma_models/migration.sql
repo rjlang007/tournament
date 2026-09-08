@@ -1,0 +1,1 @@
+ALTER TABLE "Game" ADD COLUMN "isTiebreaker" BOOLEAN NOT NULL DEFAULT false;
