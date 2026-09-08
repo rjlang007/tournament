@@ -1,6 +1,6 @@
 import { io, Socket } from "socket.io-client";
 import { API_URL } from "./api";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 
 let socket: Socket | null = null;
 
@@ -11,14 +11,29 @@ export function getSocket() {
 
 /** Joins the tournament's room and re-runs `onEvent` for any of the given events. */
 export function useTournamentSocket(tournamentId: string | undefined, events: string[], onEvent: () => void) {
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
+
   useEffect(() => {
     if (!tournamentId) return;
     const s = getSocket();
-    s.emit("join-tournament", tournamentId);
-    events.forEach((e) => s.on(e, onEvent));
-    return () => {
-      events.forEach((e) => s.off(e, onEvent));
+    let refreshTimer: number | undefined;
+    const joinRoom = () => s.emit("join-tournament", tournamentId);
+    const scheduleRefresh = () => {
+      if (refreshTimer !== undefined) return;
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = undefined;
+        onEventRef.current();
+      }, 100);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    if (s.connected) joinRoom();
+    s.on("connect", joinRoom);
+    events.forEach((e) => s.on(e, scheduleRefresh));
+    return () => {
+      if (refreshTimer !== undefined) window.clearTimeout(refreshTimer);
+      s.off("connect", joinRoom);
+      events.forEach((e) => s.off(e, scheduleRefresh));
+    };
   }, [tournamentId, events.join(",")]);
 }

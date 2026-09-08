@@ -40,6 +40,10 @@
     @apply transition-all duration-200;
   }
 
+  button:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+
   ::selection {
     background: rgba(242, 201, 76, 0.35);
   }
@@ -76,6 +80,10 @@
 
   .metric-card {
     @apply rounded-2xl border border-white/10 bg-white/[0.04] p-4 shadow-[0_12px_30px_rgba(0,0,0,0.18)];
+  }
+
+  .page-enter {
+    animation: page-enter 260ms ease-out both;
   }
 
   .raffle-wheel-stage {
@@ -125,6 +133,11 @@
     border-top: 28px solid #ef4444;
     filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.45));
   }
+}
+
+@keyframes page-enter {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @media (max-width: 640px) {
@@ -259,6 +272,15 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
   .login-intro,
   .login-intro-court,
   .login-intro-content,

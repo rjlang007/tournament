@@ -50,7 +50,7 @@ function Shell() {
           </div>
         </nav>
 
-        <main className="pb-10 pt-6">
+        <main key={location.pathname} className="page-enter pb-10 pt-6">
           {subscriptionNotice !== null && subscriptionNotice <= 5 && subscriptionNotice >= 0 && <div className="mb-5 rounded-xl border border-ball/30 bg-ball/10 px-4 py-3 text-sm text-ball">Your subscription expires in {subscriptionNotice} day{subscriptionNotice === 1 ? "" : "s"}. Please contact the platform owner for renewal.</div>}
           <Routes>
             <Route path="registration" element={user && (user.role === "ADMIN" || user.role === "SUPERADMIN") ? <Registration /> : <Navigate to="/login" state={{ from: `${base}/registration` }} replace />} />
