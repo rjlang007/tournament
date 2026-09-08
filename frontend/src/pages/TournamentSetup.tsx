@@ -21,8 +21,8 @@ export default function TournamentSetup() {
     load();
   };
 
-  if (user?.role === "PLAYER") {
-    return <PlayerTournamentDirectory tournaments={tournaments} joined={joined} onJoin={joinTournament} onOpen={(id) => navigate(`/t/${id}/kiosk`)} />;
+  if (user?.role === "PLAYER" || !user) {
+    return <PlayerTournamentDirectory tournaments={tournaments} joined={joined} canJoin={!!user} onJoin={joinTournament} onOpen={(id) => navigate(`/t/${id}/kiosk`)} />;
   }
 
   const create = async () => {
@@ -176,11 +176,13 @@ export default function TournamentSetup() {
 function PlayerTournamentDirectory({
   tournaments,
   joined,
+  canJoin,
   onJoin,
   onOpen,
 }: {
   tournaments: Tournament[];
   joined: Record<string, boolean>;
+  canJoin: boolean;
   onJoin: (id: string, skillLevel: "BEGINNER" | "AVERAGE" | "ADVANCE", displayName: string) => Promise<void>;
   onOpen: (id: string) => void;
 }) {
@@ -201,14 +203,14 @@ function PlayerTournamentDirectory({
           <div className="text-[10px] uppercase tracking-[0.28em] text-ball/80">Recent tournaments</div>
           <h1 className="mt-2 font-display text-4xl font-bold text-white">Spectate or join a tournament</h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">Every posted tournament is available to view. Resume a joined tournament or spectate its live courts, leaderboard, and bracket.</p>
-          <div className="mt-5 grid max-w-xl gap-4 sm:grid-cols-2"><div><label className="field-label">Name shown in tournament</label><input className="field" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Your full name" maxLength={80} required /></div><div><label className="field-label">Your skill level</label><select value={skillLevel} onChange={(event) => setSkillLevel(event.target.value as typeof skillLevel)} className="field"><option value="BEGINNER">Beginner</option><option value="AVERAGE">Average</option><option value="ADVANCE">Advanced</option></select></div></div>
+          {canJoin && <div className="mt-5 grid max-w-xl gap-4 sm:grid-cols-2"><div><label className="field-label">Name shown in tournament</label><input className="field" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Your full name" maxLength={80} required /></div><div><label className="field-label">Your skill level</label><select value={skillLevel} onChange={(event) => setSkillLevel(event.target.value as typeof skillLevel)} className="field"><option value="BEGINNER">Beginner</option><option value="AVERAGE">Average</option><option value="ADVANCE">Advanced</option></select></div></div>}
         </header>
         <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {tournaments.map((tournament) => (
             <article key={tournament.id} className="glass-panel p-5">
               <div className="flex items-start justify-between gap-3"><h2 className="font-display text-2xl font-bold text-white">{tournament.name}</h2><span className="text-[10px] uppercase tracking-widest text-white/45">{tournament.status}</span></div>
               <p className="mt-2 text-sm text-white/50">{tournament.type === "RANDOM_PAIRING" ? "Random pairing" : "Fixed bracket"}</p>
-              <div className="mt-5 flex gap-2"><button onClick={() => onOpen(tournament.id)} className="secondary-button flex-1">{tournament.myMembership?.joinStatus === "APPROVED" ? "Resume tournament" : "Spectate tournament"}</button><button onClick={() => join(tournament.id)} disabled={displayName.trim().length < 2 || joined[tournament.id] || pending[tournament.id] || (tournament.myMembership !== undefined && tournament.myMembership !== null)} className="action-button flex-1">{tournament.myMembership?.joinStatus === "APPROVED" ? "Joined" : tournament.myMembership?.joinStatus === "PENDING" || joined[tournament.id] ? "Awaiting approval" : tournament.myMembership?.joinStatus === "REJECTED" ? "Rejected" : pending[tournament.id] ? "Sending..." : "Request entry"}</button></div>
+              <div className="mt-5 flex gap-2"><button onClick={() => onOpen(tournament.id)} className="secondary-button flex-1">{tournament.myMembership?.joinStatus === "APPROVED" ? "Resume tournament" : "Spectate tournament"}</button>{canJoin && <button onClick={() => join(tournament.id)} disabled={displayName.trim().length < 2 || joined[tournament.id] || pending[tournament.id] || (tournament.myMembership !== undefined && tournament.myMembership !== null)} className="action-button flex-1">{tournament.myMembership?.joinStatus === "APPROVED" ? "Joined" : tournament.myMembership?.joinStatus === "PENDING" || joined[tournament.id] ? "Awaiting approval" : tournament.myMembership?.joinStatus === "REJECTED" ? "Rejected" : pending[tournament.id] ? "Sending..." : "Request entry"}</button>}</div>
             </article>
           ))}
         </section>

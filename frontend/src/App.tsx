@@ -17,11 +17,10 @@ function Shell() {
   const location = useLocation();
   const { tournamentId } = useParams();
   if (loading) return <div className="min-h-screen p-10 text-center text-white/60">Loading account...</div>;
-  if (!user) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   const base = `/t/${tournamentId}`;
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `nav-pill ${isActive ? "nav-pill-active" : ""}`;
-  const subscriptionNotice = user.role === "ADMIN" && user.subscriptionExpiresAt
+  const subscriptionNotice = user?.role === "ADMIN" && user.subscriptionExpiresAt
     ? Math.ceil((new Date(user.subscriptionExpiresAt).getTime() - Date.now()) / 86400000)
     : null;
 
@@ -40,22 +39,22 @@ function Shell() {
           </div>
 
           <div className="mobile-nav-links flex min-w-0 flex-nowrap items-center gap-1 overflow-x-auto pb-1 sm:flex-wrap sm:gap-2">
-            {(user.role === "ADMIN" || user.role === "SUPERADMIN") && <NavLink to={`${base}/registration`} className={linkClass}>Registration</NavLink>}
-            {(user.role === "ADMIN" || user.role === "SUPERADMIN") && <NavLink to={`${base}/courts`} className={linkClass}>Court Control</NavLink>}
+            {user && (user.role === "ADMIN" || user.role === "SUPERADMIN") && <NavLink to={`${base}/registration`} className={linkClass}>Registration</NavLink>}
+            {user && (user.role === "ADMIN" || user.role === "SUPERADMIN") && <NavLink to={`${base}/courts`} className={linkClass}>Court Control</NavLink>}
             <NavLink to={`${base}/kiosk`} className={linkClass}>Kiosk</NavLink>
             <NavLink to={`${base}/leaderboard`} className={linkClass}>Leaderboard</NavLink>
             <NavLink to={`${base}/bracket`} className={linkClass}>Bracket</NavLink>
             <NavLink to={`${base}/raffle`} className={linkClass}>Raffle</NavLink>
-            {user.role === "SUPERADMIN" && <NavLink to="/platform" className={linkClass}>Platform</NavLink>}
-            <button onClick={() => logout()} className="nav-pill">Sign out</button>
+            {user?.role === "SUPERADMIN" && <NavLink to="/platform" className={linkClass}>Platform</NavLink>}
+            {user ? <button onClick={() => logout()} className="nav-pill">Sign out</button> : <NavLink to="/login" state={{ from: location.pathname }} className="nav-pill">Admin sign in</NavLink>}
           </div>
         </nav>
 
         <main className="pb-10 pt-6">
           {subscriptionNotice !== null && subscriptionNotice <= 5 && subscriptionNotice >= 0 && <div className="mb-5 rounded-xl border border-ball/30 bg-ball/10 px-4 py-3 text-sm text-ball">Your subscription expires in {subscriptionNotice} day{subscriptionNotice === 1 ? "" : "s"}. Please contact the platform owner for renewal.</div>}
           <Routes>
-            <Route path="registration" element={user.role === "ADMIN" || user.role === "SUPERADMIN" ? <Registration /> : <Navigate to={`${base}/kiosk`} replace />} />
-            <Route path="courts" element={user.role === "ADMIN" || user.role === "SUPERADMIN" ? <CourtControl /> : <Navigate to={`${base}/kiosk`} replace />} />
+            <Route path="registration" element={user && (user.role === "ADMIN" || user.role === "SUPERADMIN") ? <Registration /> : <Navigate to="/login" state={{ from: `${base}/registration` }} replace />} />
+            <Route path="courts" element={user && (user.role === "ADMIN" || user.role === "SUPERADMIN") ? <CourtControl /> : <Navigate to="/login" state={{ from: `${base}/courts` }} replace />} />
             <Route path="kiosk" element={<Kiosk />} />
             <Route path="leaderboard" element={<Leaderboard />} />
             <Route path="bracket" element={<BracketView />} />
@@ -77,7 +76,7 @@ export default function App() {
       <Route path="/login" element={<TournamentLogin />} />
       <Route path="/community/register" element={<Register />} />
       <Route path="/platform" element={user?.role === "SUPERADMIN" ? <PlatformAdmin /> : <Navigate to="/" replace />} />
-      <Route path="/" element={user ? <TournamentSetup /> : <Navigate to="/login" replace />} />
+      <Route path="/" element={<TournamentSetup />} />
       <Route path="/t/:tournamentId/*" element={<Shell />} />
       <Route path="*" element={<Navigate to={user ? "/" : "/login"} replace />} />
     </Routes>

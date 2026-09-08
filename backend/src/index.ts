@@ -106,7 +106,9 @@ async function requireAdminForWrites(req: AuthedRequest, res: express.Response, 
   next();
 }
 
-const tournamentAccess = [attachUser, requireAuth, requireAdminForWrites];
+// Tournament reads are public for spectators. Mutations still require an
+// authenticated administrator and are checked against tournament ownership.
+const tournamentAccess = [attachUser, requireAdminForWrites];
 app.use("/api/tournaments", ...tournamentAccess, tournamentsRouter);
 app.use("/api/players", ...tournamentAccess, playersRouter);
 app.use("/api/courts", ...tournamentAccess, courtsRouter);
