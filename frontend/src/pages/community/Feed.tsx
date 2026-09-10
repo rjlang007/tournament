@@ -6,16 +6,18 @@ export default function Feed() {
   const [posts, setPosts] = useState<PostSummary[] | null>(null);
   const [note, setNote] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [location, setLocation] = useState("");
 
   useEffect(() => {
     api
-      .get("/posts")
+      .get("/posts", { params: { search: search || undefined, location: location || undefined } })
       .then(({ data }) => {
         setPosts(data.posts);
         setNote(data.photoPolicyNote);
       })
       .catch(() => setError("Couldn't load tournaments right now."));
-  }, []);
+  }, [search, location]);
 
   return (
     <div>
@@ -28,6 +30,7 @@ export default function Feed() {
           + Post a tournament
         </Link>
       </div>
+      <div className="mb-6 grid gap-3 sm:grid-cols-2"><input className="field" placeholder="Search tournaments" value={search} onChange={(e) => setSearch(e.target.value)} /><input className="field" placeholder="Filter by location" value={location} onChange={(e) => setLocation(e.target.value)} /></div>
       {note && <p className="text-xs text-white/40 mb-6">{note}</p>}
       {error && <p className="text-advance">{error}</p>}
       {posts === null && !error && <p className="text-white/60">Loading…</p>}

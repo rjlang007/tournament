@@ -51,7 +51,13 @@ function hostSummary(user: { id: string; username: string; avatarUrl: string | n
 const PHOTO_POLICY_NOTE = `Tournament photos are automatically deleted ${PHOTO_LIFETIME_DAYS} days after upload. Profile pictures are not affected.`;
 
 postsRouter.get("/", attachUser, requireAuth, async (_req, res) => {
+  const { search, location, amount } = _req.query as { search?: string; location?: string; amount?: string };
   const posts = await prisma.tournamentPost.findMany({
+    where: {
+      ...(search ? { OR: [{ title: { contains: search, mode: "insensitive" } }, { description: { contains: search, mode: "insensitive" } }] } : {}),
+      ...(location ? { location: { contains: location, mode: "insensitive" } } : {}),
+      ...(amount ? { amount: { contains: amount, mode: "insensitive" } } : {}),
+    },
     orderBy: { createdAt: "desc" },
     include: {
       host: true,
@@ -72,6 +78,7 @@ postsRouter.get("/", attachUser, requireAuth, async (_req, res) => {
       host: hostSummary(p.host),
       photos: p.photos.map((ph: any) => ph.url),
       registrationCount: p._count.submissions,
+      tournamentId: p.tournamentId,
     })),
   });
 });
@@ -107,7 +114,7 @@ postsRouter.get("/:id", attachUser, requireAuth, async (req: AuthedRequest, res)
     photos: post.photos.map((ph: any) => ({ id: ph.id, url: ph.url, uploadedAt: ph.uploadedAt })),
     registrationCount: post._count.submissions,
     tournamentId: post.tournamentId,
-    myRegistration: mySubmission ? { answers: mySubmission.answers, submittedAt: mySubmission.submittedAt, status: mySubmission.status, applicantName: mySubmission.applicantName, skillLevel: mySubmission.skillLevel, paymentProofUrl: mySubmission.paymentProofUrl } : null,
+    myRegistration: mySubmission ? { answers: mySubmission.answers, submittedAt: mySubmission.submittedAt, status: mySubmission.status, applicantName: mySubmission.applicantName, skillLevel: mySubmission.skillLevel, hasPaymentProof: !!mySubmission.paymentProofStoredFile } : null,
   });
 });
 
@@ -266,8 +273,15 @@ postsRouter.post("/:id/register/payment-proof", attachUser, requireAuth, uploadP
   const submission = await prisma.registrationSubmission.findUnique({ where: { postId_userId: { postId: req.params.id, userId: req.userId! } }, include: { post: true } });
   if (!submission) return res.status(404).json({ error: "Submit your registration details first." });
   if (!req.file) return res.status(400).json({ error: "Payment proof image is required." });
-  const updated = await prisma.registrationSubmission.update({ where: { id: submission.id }, data: { paymentProofStoredFile: req.file.filename, paymentProofUrl: `/uploads/payments/${req.file.filename}`, status: "PENDING" } });
-  res.json({ paymentProofUrl: updated.paymentProofUrl, status: updated.status });
+  const updated = await prisma.registrationSubmission.update({ where: { id: submission.id }, data: { paymentProofStoredFile: req.file.filename, paymentProofUrl: null, status: "PENDING" } });
+  res.json({ hasPaymentProof: !!updated.paymentProofStoredFile, status: updated.status });
+});
+
+postsRouter.get("/:id/submissions/:submissionId/payment-proof", attachUser, requireAuth, async (req: AuthedRequest, res) => {
+  const submission = await prisma.registrationSubmission.findUnique({ where: { id: req.params.submissionId }, include: { post: true } });
+  if (!submission || submission.postId !== req.params.id || !submission.paymentProofStoredFile) return res.status(404).json({ error: "Payment proof not found." });
+  if (submission.userId !== req.userId && submission.post.hostId !== req.userId) return res.status(403).json({ error: "You cannot view this payment proof." });
+  return res.sendFile(path.join(path.dirname(TOURNAMENT_PHOTO_DIR), "payments", submission.paymentProofStoredFile));
 });
 
 postsRouter.get("/:id/submissions", attachUser, requireAuth, async (req: AuthedRequest, res) => {
@@ -296,6 +310,7 @@ postsRouter.patch("/:id/submissions/:submissionId", attachUser, requireAuth, asy
       });
       await tx.queueEntry.deleteMany({ where: { tournamentId: post.tournamentId!, playerId: player.id } });
     }
+    await tx.notification.create({ data: { userId: submission.userId, type: `REGISTRATION_${status}`, title: `Tournament request ${status.toLowerCase()}`, message: status === "APPROVED" ? `Your payment was approved for ${post.title}. You are now in the player roster.` : `Your payment request for ${post.title} was rejected. Contact the tournament admin for details.` } });
     return updated;
   });
   if (status === "APPROVED") {

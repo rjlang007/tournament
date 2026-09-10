@@ -75,7 +75,7 @@ export type PostDetail = {
     status: "PENDING" | "APPROVED" | "REJECTED";
     applicantName: string;
     skillLevel: SkillLevel;
-    paymentProofUrl?: string | null;
+    hasPaymentProof: boolean;
   } | null;
   tournamentId?: string | null;
 };

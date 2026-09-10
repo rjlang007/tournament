@@ -21,6 +21,7 @@ import { billingRouter } from "./routes/billing";
 import { rafflesRouter } from "./routes/raffles";
 import { postsRouter } from "./routes/posts";
 import { usersRouter } from "./routes/users";
+import { notificationsRouter } from "./routes/notifications";
 import { attachUser, requireAuth, canManageTournament, AuthedRequest } from "./lib/auth";
 
 const app = express();
@@ -54,6 +55,7 @@ app.use("/api/billing", billingRouter);
 app.use("/api/raffles", rafflesRouter);
 app.use("/api/posts", postsRouter);
 app.use("/api/users", usersRouter);
+app.use("/api/notifications", notificationsRouter);
 
 app.post("/api/players/join", attachUser, requireAuth, async (req: AuthedRequest, res) => {
   if (!req.userId) return res.status(401).json({ error: "Not signed in." });
@@ -63,6 +65,8 @@ app.post("/api/players/join", attachUser, requireAuth, async (req: AuthedRequest
   }
   const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { username: true, role: true } });
   if (!user || user.role !== "PLAYER") return res.status(403).json({ error: "Only player accounts can join tournaments." });
+  const publishedPost = await prisma.tournamentPost.findFirst({ where: { tournamentId, hostId: { not: req.userId } }, select: { id: true } });
+  if (publishedPost) return res.status(409).json({ error: "This tournament requires payment proof approval. Open its platform post to request entry." });
   const existing = await prisma.player.findUnique({ where: { tournamentId_userId: { tournamentId, userId: req.userId } } });
   if (existing) return res.status(409).json({ error: "You already joined this tournament." });
   const player = await prisma.player.create({ data: { tournamentId, userId: req.userId, name: name.trim(), contact, skillLevel, joinStatus: "PENDING" } });
@@ -138,7 +142,8 @@ app.use("/api/brackets", ...tournamentAccess, bracketRouter);
 
 const frontendDist = path.resolve(__dirname, "../../frontend/dist");
 app.use(express.static(frontendDist));
-app.use("/uploads", express.static(path.resolve(__dirname, "../uploads")));
+app.use("/uploads/avatars", express.static(path.resolve(__dirname, "../uploads/avatars")));
+app.use("/uploads/tournaments", express.static(path.resolve(__dirname, "../uploads/tournaments")));
 app.get("*", (_req, res, next) => {
   if (_req.path.startsWith("/api/")) return next();
   res.sendFile(path.join(frontendDist, "index.html"), (error) => {

@@ -90,6 +90,20 @@ model User {
   gameResultHistory GameResultHistory[]
   tournamentPosts  TournamentPost[]
   registrations    RegistrationSubmission[]
+  notifications    Notification[]
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  message   String
+  readAt    DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([userId, readAt, createdAt])
 }
 
 model PlatformSetting {

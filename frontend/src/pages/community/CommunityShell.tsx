@@ -1,10 +1,14 @@
 import { NavLink, Outlet } from "react-router-dom";
+import { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { fileUrl } from "../../lib/api";
+import { api } from "../../lib/api";
 import Footer from "../../components/Footer";
 
 export default function CommunityShell() {
   const { user, logout } = useAuth();
+  const [unread, setUnread] = useState(0);
+  useEffect(() => { if (user) api.get<Array<{ readAt: string | null }>>("/notifications").then(({ data }) => setUnread(data.filter((item) => !item.readAt).length)); }, [user]);
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `px-3 py-2 rounded-lg text-sm font-display font-semibold tracking-wide transition-colors ${
@@ -26,6 +30,7 @@ export default function CommunityShell() {
             <NavLink to="/community/members" className={linkClass}>
               Members
             </NavLink>
+            <span className="nav-pill">Notifications{unread > 0 ? ` (${unread})` : ""}</span>
           </>
         )}
         <div className="ml-0 flex w-full items-center gap-2 sm:ml-auto sm:w-auto sm:gap-3">

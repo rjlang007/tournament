@@ -1,6 +1,6 @@
 import { useEffect, useState, FormEvent } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
-import { api, fileUrl, PostDetail as PostDetailType } from "../../lib/api";
+import { API_URL, api, fileUrl, PostDetail as PostDetailType } from "../../lib/api";
 
 export default function PostDetail() {
   const { postId } = useParams();
@@ -222,14 +222,14 @@ export default function PostDetail() {
         <form onSubmit={onRegister} className="space-y-3">
           <input className="w-full rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-white" placeholder="Your full name" value={applicantName} onChange={(e) => setApplicantName(e.target.value)} required />
           <div className="grid grid-cols-2 gap-3"><select className="rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-white" value={skillLevel} onChange={(e) => setSkillLevel(e.target.value as typeof skillLevel)}><option value="BEGINNER">Beginner</option><option value="AVERAGE">Average</option><option value="ADVANCE">Advanced</option></select><input className="rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-white" placeholder="Contact" value={contact} onChange={(e) => setContact(e.target.value)} /></div>
-          <input type="file" accept="image/*" onChange={(e) => setPaymentProof(e.target.files?.[0] ?? null)} required={!post.myRegistration?.paymentProofUrl} className="text-sm text-white/70" />
+          <input type="file" accept="image/*" onChange={(e) => setPaymentProof(e.target.files?.[0] ?? null)} required={!post.myRegistration?.hasPaymentProof} className="text-sm text-white/70" />
           {post.myRegistration && <p className="text-xs text-white/50">Request status: {post.myRegistration.status}</p>}
           {registerMsg && <p className="text-sm text-white/70">{registerMsg}</p>}
           <button type="submit" disabled={registering} className="rounded-lg bg-ball text-neutral-900 font-display font-semibold px-4 py-2 disabled:opacity-50">{registering ? "Submitting…" : "Submit request"}</button>
         </form>
       </div>}
 
-      {post.isOwner && post.tournamentId && <div className="mt-6 rounded-xl border border-white/10 p-4"><h3 className="font-display font-semibold text-white mb-3">Entry requests</h3><div className="space-y-2">{submissions.map((submission) => <div key={submission.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/[0.03] p-3 text-sm"><div><div className="text-white">{submission.applicantName}</div><div className="text-xs text-white/50">{submission.skillLevel} · {submission.status} · {submission.paymentProofUrl ? <a className="text-ball" href={fileUrl(submission.paymentProofUrl)} target="_blank" rel="noreferrer">View proof</a> : "No proof"}</div></div>{submission.status === "PENDING" && <div className="flex gap-2"><button onClick={() => reviewSubmission(submission.id, "APPROVED")} className="secondary-button px-2 py-1 text-xs text-emerald-300">Approve</button><button onClick={() => reviewSubmission(submission.id, "REJECTED")} className="secondary-button px-2 py-1 text-xs text-red-300">Reject</button></div>}</div>)}</div></div>}
+      {post.isOwner && post.tournamentId && <div className="mt-6 rounded-xl border border-white/10 p-4"><h3 className="font-display font-semibold text-white mb-3">Entry requests</h3><div className="space-y-2">{submissions.map((submission) => <div key={submission.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-white/[0.03] p-3 text-sm"><div><div className="text-white">{submission.applicantName}</div><div className="text-xs text-white/50">{submission.skillLevel} · {submission.status} · {submission.paymentProofStoredFile ? <a className="text-ball" href={`${API_URL}/api/posts/${postId}/submissions/${submission.id}/payment-proof`} target="_blank" rel="noreferrer">View proof</a> : "No proof"}</div></div>{submission.status === "PENDING" && <div className="flex gap-2"><button onClick={() => reviewSubmission(submission.id, "APPROVED")} className="secondary-button px-2 py-1 text-xs text-emerald-300">Approve</button><button onClick={() => reviewSubmission(submission.id, "REJECTED")} className="secondary-button px-2 py-1 text-xs text-red-300">Reject</button></div>}</div>)}</div></div>}
     </div>
   );
 }

@@ -22,6 +22,7 @@ import PostDetail from "./pages/community/PostDetail";
 import Profile from "./pages/community/Profile";
 import Members from "./pages/community/Members";
 import CommunityLogin from "./pages/community/Login";
+import { Privacy, Terms } from "./pages/Legal";
 
 function Shell() {
   const { user, loading, logout } = useAuth();
@@ -102,6 +103,8 @@ export default function App() {
       <Route path="/login" element={<TournamentLogin />} />
       <Route path="/community/register" element={<Register />} />
       <Route path="/community/login" element={<CommunityLogin />} />
+      <Route path="/privacy" element={<Privacy />} />
+      <Route path="/terms" element={<Terms />} />
       <Route path="/community" element={<CommunityShell />}>
         <Route index element={<Feed />} />
         <Route path="new" element={<CreatePost />} />

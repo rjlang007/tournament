@@ -491,30 +491,6 @@ export default function CourtControl() {
         </div>
       )}
 
-      <section className="mb-6 glass-panel p-4 sm:p-5">
-        <div className="mb-4">
-          <div className="text-xs uppercase tracking-[0.2em] text-white/50">Tournament venue</div>
-          <h3 className="mt-1 font-display text-xl font-bold text-white">Set the playing location</h3>
-          <p className="mt-1 text-sm text-white/50">Only tournament administrators can edit this venue. Click the map to place the pin.</p>
-        </div>
-        <div className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
-          <div className="space-y-3">
-            <div><label className="field-label">Venue name</label><input className="field" value={locationName} onChange={(event) => setLocationName(event.target.value)} placeholder="e.g. Riverside Sports Center" /></div>
-            <div><label className="field-label">Address</label><textarea className="field min-h-24" value={locationAddress} onChange={(event) => setLocationAddress(event.target.value)} placeholder="Street, city, province" /></div>
-            <div className="text-xs text-white/40">
-              {locationLatitude !== null && locationLongitude !== null ? `Pinned at ${locationLatitude.toFixed(5)}, ${locationLongitude.toFixed(5)}` : "No map pin selected yet."}
-            </div>
-            <button onClick={saveLocation} className="action-button w-full sm:w-auto">Save venue</button>
-          </div>
-          <TournamentLocationMap
-            latitude={locationLatitude}
-            longitude={locationLongitude}
-            editable
-            onChange={(latitude, longitude) => { setLocationLatitude(latitude); setLocationLongitude(longitude); }}
-          />
-        </div>
-      </section>
-
       {finalizeCheck && (
         <div className="mobile-modal-shell" onClick={closeFinalize}>
           <div ref={finalizeModalRef}
@@ -706,6 +682,30 @@ export default function CourtControl() {
 
               {game && (
                 <div>
+
+                <section className="mt-8 glass-panel p-4 sm:p-5">
+                  <div className="mb-4">
+                    <div className="text-xs uppercase tracking-[0.2em] text-white/50">Venue &amp; map</div>
+                    <h3 className="mt-1 font-display text-xl font-bold text-white">Tournament venue</h3>
+                    <p className="mt-1 text-sm text-white/50">Set the playing location separately from live court operations.</p>
+                  </div>
+                  <div className="grid gap-4 lg:grid-cols-[0.8fr_1.2fr]">
+                    <div className="space-y-3">
+                      <div><label className="field-label">Venue name</label><input className="field" value={locationName} onChange={(event) => setLocationName(event.target.value)} placeholder="e.g. Riverside Sports Center" /></div>
+                      <div><label className="field-label">Address</label><textarea className="field min-h-24" value={locationAddress} onChange={(event) => setLocationAddress(event.target.value)} placeholder="Street, city, province" /></div>
+                      <div className="text-xs text-white/40">
+                        {locationLatitude !== null && locationLongitude !== null ? `Pinned at ${locationLatitude.toFixed(5)}, ${locationLongitude.toFixed(5)}` : "No map pin selected yet."}
+                      </div>
+                      <button onClick={saveLocation} className="action-button w-full sm:w-auto">Save venue</button>
+                    </div>
+                    <TournamentLocationMap
+                      latitude={locationLatitude}
+                      longitude={locationLongitude}
+                      editable
+                      onChange={(latitude, longitude) => { setLocationLatitude(latitude); setLocationLongitude(longitude); }}
+                    />
+                  </div>
+                </section>
                   {game.isTiebreaker && (
                     <div className="text-[10px] uppercase tracking-wide text-ball font-bold mb-1">
                       🏆 Tiebreaker
