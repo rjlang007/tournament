@@ -19,6 +19,8 @@ import { authRouter } from "./routes/auth";
 import { accountsRouter } from "./routes/accounts";
 import { billingRouter } from "./routes/billing";
 import { rafflesRouter } from "./routes/raffles";
+import { postsRouter } from "./routes/posts";
+import { usersRouter } from "./routes/users";
 import { attachUser, requireAuth, canManageTournament, AuthedRequest } from "./lib/auth";
 
 const app = express();
@@ -50,6 +52,8 @@ app.use("/api/auth", authRouter);
 app.use("/api/accounts", accountsRouter);
 app.use("/api/billing", billingRouter);
 app.use("/api/raffles", rafflesRouter);
+app.use("/api/posts", postsRouter);
+app.use("/api/users", usersRouter);
 
 app.post("/api/players/join", attachUser, requireAuth, async (req: AuthedRequest, res) => {
   if (!req.userId) return res.status(401).json({ error: "Not signed in." });
@@ -134,6 +138,7 @@ app.use("/api/brackets", ...tournamentAccess, bracketRouter);
 
 const frontendDist = path.resolve(__dirname, "../../frontend/dist");
 app.use(express.static(frontendDist));
+app.use("/uploads", express.static(path.resolve(__dirname, "../uploads")));
 app.get("*", (_req, res, next) => {
   if (_req.path.startsWith("/api/")) return next();
   res.sendFile(path.join(frontendDist, "index.html"), (error) => {

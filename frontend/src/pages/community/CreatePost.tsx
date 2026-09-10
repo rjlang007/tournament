@@ -1,7 +1,7 @@
-import { useState, FormEvent } from "react";
+import { useEffect, useState, FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { api } from "../../lib/api";
-import type { RegistrationField, RegistrationFieldType } from "../../lib/api";
+import type { RegistrationField, RegistrationFieldType, Tournament } from "../../lib/api";
 
 const FIELD_TYPES: RegistrationFieldType[] = ["text", "textarea", "number", "email", "phone"];
 
@@ -17,6 +17,12 @@ export default function CreatePost() {
   const [photos, setPhotos] = useState<FileList | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [tournaments, setTournaments] = useState<Tournament[]>([]);
+  const [tournamentId, setTournamentId] = useState("");
+
+  useEffect(() => {
+    api.get<Tournament[]>("/tournaments").then(({ data }) => setTournaments(data.filter((t) => t.status !== "COMPLETED")));
+  }, []);
 
   function addField() {
     setFields([...fields, { label: "", type: "text", required: false }]);
@@ -42,6 +48,7 @@ export default function CreatePost() {
         amount: amount || undefined,
         registrationLink: registrationLink || undefined,
         registrationFields: cleanFields.length > 0 ? cleanFields : undefined,
+        tournamentId: tournamentId || undefined,
       });
 
       if (photos && photos.length > 0) {
@@ -99,6 +106,13 @@ export default function CreatePost() {
               onChange={(e) => setAmount(e.target.value)}
             />
           </div>
+        </div>
+        <div>
+          <label className="block text-sm text-white/70 mb-1">Link to your tournament (required for in-app payment approval)</label>
+          <select className={inputClass} value={tournamentId} onChange={(e) => setTournamentId(e.target.value)}>
+            <option value="">Select a tournament</option>
+            {tournaments.map((tournament) => <option key={tournament.id} value={tournament.id}>{tournament.name}</option>)}
+          </select>
         </div>
         <div>
           <label className="block text-sm text-white/70 mb-1">External registration link (optional)</label>

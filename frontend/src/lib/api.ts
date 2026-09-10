@@ -72,7 +72,12 @@ export type PostDetail = {
   myRegistration?: {
     answers: Record<string, string>;
     submittedAt: string;
+    status: "PENDING" | "APPROVED" | "REJECTED";
+    applicantName: string;
+    skillLevel: SkillLevel;
+    paymentProofUrl?: string | null;
   } | null;
+  tournamentId?: string | null;
 };
 
 export type Player = {

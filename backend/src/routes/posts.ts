@@ -4,11 +4,21 @@ import fs from "fs/promises";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { attachUser, requireAuth, AuthedRequest } from "../lib/auth";
-import { uploadTournamentPhotos, TOURNAMENT_PHOTO_DIR } from "../lib/uploads";
+import { uploadTournamentPhotos, uploadPaymentProof, TOURNAMENT_PHOTO_DIR } from "../lib/uploads";
 import { defaultAvatarUrl } from "../lib/defaultAvatars";
 import { PHOTO_LIFETIME_DAYS } from "../lib/cleanup";
+import { enqueuePlayer } from "../lib/queue";
 
 export const postsRouter = Router();
+
+async function requireAdmin(req: AuthedRequest, res: any) {
+  const user = req.userId ? await prisma.user.findUnique({ where: { id: req.userId }, select: { role: true } }) : null;
+  if (!user || !["ADMIN", "SUPERADMIN"].includes(user.role)) {
+    res.status(403).json({ error: "Only tournament administrators can publish or manage tournament posts." });
+    return false;
+  }
+  return true;
+}
 
 const registrationFieldSchema = z.object({
   label: z.string().min(1).max(80),
@@ -24,6 +34,7 @@ const postSchema = z.object({
   amount: z.string().max(80).optional(),
   registrationLink: z.string().url("Registration link must be a valid URL.").max(500).optional().or(z.literal("")),
   registrationFields: z.array(registrationFieldSchema).max(20).optional(),
+  tournamentId: z.string().uuid().optional(),
 });
 
 function hostSummary(user: { id: string; username: string; avatarUrl: string | null; defaultAvatarKey: string }) {
@@ -95,16 +106,22 @@ postsRouter.get("/:id", attachUser, requireAuth, async (req: AuthedRequest, res)
     isOwner: post.hostId === req.userId,
     photos: post.photos.map((ph: any) => ({ id: ph.id, url: ph.url, uploadedAt: ph.uploadedAt })),
     registrationCount: post._count.submissions,
-    myRegistration: mySubmission ? { answers: mySubmission.answers, submittedAt: mySubmission.submittedAt } : null,
+    tournamentId: post.tournamentId,
+    myRegistration: mySubmission ? { answers: mySubmission.answers, submittedAt: mySubmission.submittedAt, status: mySubmission.status, applicantName: mySubmission.applicantName, skillLevel: mySubmission.skillLevel, paymentProofUrl: mySubmission.paymentProofUrl } : null,
   });
 });
 
 postsRouter.post("/", attachUser, requireAuth, async (req: AuthedRequest, res) => {
+  if (!(await requireAdmin(req, res))) return;
   const parsed = postSchema.safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
   const data = parsed.data;
+  if (data.tournamentId) {
+    const tournament = await prisma.tournament.findFirst({ where: { id: data.tournamentId, ownerId: req.userId! } });
+    if (!tournament) return res.status(403).json({ error: "You can only publish tournaments you own." });
+  }
 
   const post = await prisma.tournamentPost.create({
     data: {
@@ -116,6 +133,7 @@ postsRouter.post("/", attachUser, requireAuth, async (req: AuthedRequest, res) =
       amount: data.amount,
       registrationLink: data.registrationLink || null,
       registrationFields: data.registrationFields ?? undefined,
+      tournamentId: data.tournamentId,
     },
   });
 
@@ -123,6 +141,7 @@ postsRouter.post("/", attachUser, requireAuth, async (req: AuthedRequest, res) =
 });
 
 postsRouter.patch("/:id", attachUser, requireAuth, async (req: AuthedRequest, res) => {
+  if (!(await requireAdmin(req, res))) return;
   const post = await prisma.tournamentPost.findUnique({ where: { id: req.params.id } });
   if (!post) return res.status(404).json({ error: "Tournament post not found." });
   if (post.hostId !== req.userId) return res.status(403).json({ error: "Only the host can edit this post." });
@@ -130,6 +149,11 @@ postsRouter.patch("/:id", attachUser, requireAuth, async (req: AuthedRequest, re
   const parsed = postSchema.partial().safeParse(req.body);
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
+  }
+
+  if (parsed.data.tournamentId) {
+    const tournament = await prisma.tournament.findFirst({ where: { id: parsed.data.tournamentId, ownerId: req.userId! } });
+    if (!tournament) return res.status(403).json({ error: "You can only link tournaments you own." });
   }
 
   const updated = await prisma.tournamentPost.update({
@@ -143,6 +167,7 @@ postsRouter.patch("/:id", attachUser, requireAuth, async (req: AuthedRequest, re
 });
 
 postsRouter.delete("/:id", attachUser, requireAuth, async (req: AuthedRequest, res) => {
+  if (!(await requireAdmin(req, res))) return;
   const post = await prisma.tournamentPost.findUnique({
     where: { id: req.params.id },
     include: { photos: true },
@@ -165,6 +190,7 @@ postsRouter.post(
   requireAuth,
   uploadTournamentPhotos.array("photos", 8),
   async (req: AuthedRequest, res) => {
+    if (!(await requireAdmin(req, res))) return;
     const post = await prisma.tournamentPost.findUnique({ where: { id: req.params.id } });
     if (!post) return res.status(404).json({ error: "Tournament post not found." });
     if (post.hostId !== req.userId) return res.status(403).json({ error: "Only the host can add photos." });
@@ -192,6 +218,7 @@ postsRouter.post(
 );
 
 postsRouter.delete("/:id/photos/:photoId", attachUser, requireAuth, async (req: AuthedRequest, res) => {
+  if (!(await requireAdmin(req, res))) return;
   const post = await prisma.tournamentPost.findUnique({ where: { id: req.params.id } });
   if (!post) return res.status(404).json({ error: "Tournament post not found." });
   if (post.hostId !== req.userId) return res.status(403).json({ error: "Only the host can remove photos." });
@@ -212,6 +239,13 @@ postsRouter.post("/:id/register", attachUser, requireAuth, async (req: AuthedReq
 
   const fields = ((post.registrationFields as any[]) ?? []) as { label: string; required?: boolean }[];
   const answers = req.body?.answers && typeof req.body.answers === "object" ? req.body.answers : {};
+  const applicantName = typeof req.body?.applicantName === "string" ? req.body.applicantName.trim() : "";
+  const skillLevel = req.body?.skillLevel;
+  const contact = typeof req.body?.contact === "string" ? req.body.contact.trim() : null;
+  if (applicantName.length < 2 || applicantName.length > 80 || !["BEGINNER", "AVERAGE", "ADVANCE"].includes(skillLevel)) {
+    return res.status(400).json({ error: "Name and valid skill level are required." });
+  }
+  if (!post.tournamentId) return res.status(400).json({ error: "This post is not linked to a tournament yet." });
 
   for (const field of fields) {
     if (field.required && !String(answers[field.label] ?? "").trim()) {
@@ -221,11 +255,54 @@ postsRouter.post("/:id/register", attachUser, requireAuth, async (req: AuthedReq
 
   const submission = await prisma.registrationSubmission.upsert({
     where: { postId_userId: { postId: post.id, userId: req.userId! } },
-    update: { answers },
-    create: { postId: post.id, userId: req.userId!, answers },
+    update: { answers, applicantName, skillLevel, contact, status: "PENDING" },
+    create: { postId: post.id, userId: req.userId!, answers, applicantName, skillLevel, contact },
   });
 
   res.status(201).json({ ok: true, submittedAt: submission.submittedAt });
+});
+
+postsRouter.post("/:id/register/payment-proof", attachUser, requireAuth, uploadPaymentProof.single("proof"), async (req: AuthedRequest, res) => {
+  const submission = await prisma.registrationSubmission.findUnique({ where: { postId_userId: { postId: req.params.id, userId: req.userId! } }, include: { post: true } });
+  if (!submission) return res.status(404).json({ error: "Submit your registration details first." });
+  if (!req.file) return res.status(400).json({ error: "Payment proof image is required." });
+  const updated = await prisma.registrationSubmission.update({ where: { id: submission.id }, data: { paymentProofStoredFile: req.file.filename, paymentProofUrl: `/uploads/payments/${req.file.filename}`, status: "PENDING" } });
+  res.json({ paymentProofUrl: updated.paymentProofUrl, status: updated.status });
+});
+
+postsRouter.get("/:id/submissions", attachUser, requireAuth, async (req: AuthedRequest, res) => {
+  const post = await prisma.tournamentPost.findUnique({ where: { id: req.params.id } });
+  if (!post) return res.status(404).json({ error: "Tournament post not found." });
+  if (post.hostId !== req.userId) return res.status(403).json({ error: "Only the tournament admin can review requests." });
+  const submissions = await prisma.registrationSubmission.findMany({ where: { postId: post.id }, orderBy: { submittedAt: "desc" }, include: { user: { select: { username: true, avatarUrl: true, defaultAvatarKey: true } } } });
+  res.json(submissions);
+});
+
+postsRouter.patch("/:id/submissions/:submissionId", attachUser, requireAuth, async (req: AuthedRequest, res) => {
+  const post = await prisma.tournamentPost.findUnique({ where: { id: req.params.id } });
+  if (!post || post.hostId !== req.userId) return res.status(403).json({ error: "Only the tournament admin can review requests." });
+  const status = req.body?.status;
+  if (!["APPROVED", "REJECTED"].includes(status)) return res.status(400).json({ error: "Invalid review status." });
+  const submission = await prisma.registrationSubmission.findUnique({ where: { id: req.params.submissionId } });
+  if (!submission || submission.postId !== post.id) return res.status(404).json({ error: "Registration request not found." });
+  if (!post.tournamentId) return res.status(400).json({ error: "This post is not linked to a tournament." });
+  const result = await prisma.$transaction(async (tx) => {
+    const updated = await tx.registrationSubmission.update({ where: { id: submission.id }, data: { status } });
+    if (status === "APPROVED") {
+      const player = await tx.player.upsert({
+        where: { tournamentId_userId: { tournamentId: post.tournamentId!, userId: submission.userId } },
+        update: { name: submission.applicantName, skillLevel: submission.skillLevel, contact: submission.contact, joinStatus: "APPROVED", status: "WAITING" },
+        create: { tournamentId: post.tournamentId!, userId: submission.userId, name: submission.applicantName, skillLevel: submission.skillLevel, contact: submission.contact, joinStatus: "APPROVED" },
+      });
+      await tx.queueEntry.deleteMany({ where: { tournamentId: post.tournamentId!, playerId: player.id } });
+    }
+    return updated;
+  });
+  if (status === "APPROVED") {
+    const player = await prisma.player.findUnique({ where: { tournamentId_userId: { tournamentId: post.tournamentId!, userId: submission.userId } } });
+    if (player) await enqueuePlayer(post.tournamentId!, player.id);
+  }
+  res.json(result);
 });
 
 async function unlinkTournamentPhoto(storedFile: string) {

@@ -15,6 +15,13 @@ import PlatformAdmin from "./pages/PlatformAdmin";
 import Footer from "./components/Footer";
 import Raffle from "./pages/Raffle";
 import CelebrationOverlay from "./components/CelebrationOverlay";
+import CommunityShell from "./pages/community/CommunityShell";
+import Feed from "./pages/community/Feed";
+import CreatePost from "./pages/community/CreatePost";
+import PostDetail from "./pages/community/PostDetail";
+import Profile from "./pages/community/Profile";
+import Members from "./pages/community/Members";
+import CommunityLogin from "./pages/community/Login";
 
 function Shell() {
   const { user, loading, logout } = useAuth();
@@ -94,6 +101,14 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<TournamentLogin />} />
       <Route path="/community/register" element={<Register />} />
+      <Route path="/community/login" element={<CommunityLogin />} />
+      <Route path="/community" element={<CommunityShell />}>
+        <Route index element={<Feed />} />
+        <Route path="new" element={<CreatePost />} />
+        <Route path=":postId" element={<PostDetail />} />
+        <Route path="profile/:username" element={<Profile />} />
+        <Route path="members" element={<Members />} />
+      </Route>
       <Route path="/platform" element={user?.role === "SUPERADMIN" ? <PlatformAdmin /> : <Navigate to="/" replace />} />
       <Route path="/" element={<TournamentSetup />} />
       <Route path="/t/:tournamentId/*" element={<Shell />} />

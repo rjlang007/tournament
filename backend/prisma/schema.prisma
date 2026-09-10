@@ -2,6 +2,12 @@ generator client {
   provider = "prisma-client-js"
 }
 
+enum RegistrationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
@@ -104,9 +110,13 @@ model TournamentPost {
   registrationLink   String?
   registrationFields Json?
   createdAt          DateTime @default(now())
+  tournamentId       String?
+  tournament         Tournament? @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
 
   photos       TournamentPhoto[]
   submissions  RegistrationSubmission[]
+
+  @@index([tournamentId])
 }
 
 model TournamentPhoto {
@@ -131,7 +141,14 @@ model RegistrationSubmission {
   submittedAt DateTime @default(now())
 
   @@index([postId])
+  status      RegistrationStatus @default(PENDING)
+  applicantName String
+  skillLevel  SkillLevel
+  contact     String?
+  paymentProofUrl String?
+  paymentProofStoredFile String?
   @@unique([postId, userId])
+  @@index([postId, status])
 }
 
 model Player {
@@ -184,6 +201,7 @@ model Tournament {
   queue      QueueEntry[]
   raffleDraws RaffleDraw[]
   auditLogs   AuditLog[]
+  posts       TournamentPost[]
 
   @@index([ownerId])
 }

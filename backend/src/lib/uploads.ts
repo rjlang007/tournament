@@ -5,8 +5,9 @@ import { v4 as uuid } from "uuid";
 
 export const AVATAR_DIR = path.join(__dirname, "..", "..", "uploads", "avatars");
 export const TOURNAMENT_PHOTO_DIR = path.join(__dirname, "..", "..", "uploads", "tournaments");
+export const PAYMENT_PROOF_DIR = path.join(__dirname, "..", "..", "uploads", "payments");
 
-for (const dir of [AVATAR_DIR, TOURNAMENT_PHOTO_DIR]) {
+for (const dir of [AVATAR_DIR, TOURNAMENT_PHOTO_DIR, PAYMENT_PROOF_DIR]) {
   fs.mkdirSync(dir, { recursive: true });
 }
 
@@ -41,4 +42,10 @@ export const uploadTournamentPhotos = multer({
   storage: makeStorage(TOURNAMENT_PHOTO_DIR),
   fileFilter: imageFileFilter,
   limits: { fileSize: MAX_FILE_SIZE, files: 8 },
+});
+
+export const uploadPaymentProof = multer({
+  storage: makeStorage(PAYMENT_PROOF_DIR),
+  fileFilter: imageFileFilter,
+  limits: { fileSize: MAX_FILE_SIZE, files: 1 },
 });
