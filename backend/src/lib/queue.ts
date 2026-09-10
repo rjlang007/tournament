@@ -7,6 +7,13 @@ type DatabaseClient = typeof prisma | Prisma.TransactionClient;
 
 const UPCOMING_PREVIEW_SIZE = 6; // "4-6 waiting games" shown on kiosk
 
+async function withTournamentLock<T>(tournamentId: string, work: () => Promise<T>): Promise<T> {
+  return prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tournamentId}))`;
+    return work();
+  }, { maxWait: 10_000, timeout: 30_000 });
+}
+
 /**
  * Refills the UPCOMING game preview for a RANDOM_PAIRING tournament.
  *
@@ -19,7 +26,7 @@ const UPCOMING_PREVIEW_SIZE = 6; // "4-6 waiting games" shown on kiosk
  * Leftover players who can't be matched (e.g. all remaining are Advance
  * with no Beginners left) stay in the queue untouched for the next refill.
  */
-export async function refillUpcomingQueue(tournamentId: string, minPreview = 4, maxPreview?: number) {
+async function refillUpcomingQueueUnlocked(tournamentId: string, minPreview = 4, maxPreview?: number) {
   // Always draw enough games to seat every enabled court plus a small
   // preview buffer, so a draw never leaves courts empty just because the
   // default preview size (6) was smaller than the number of courts.
@@ -34,8 +41,9 @@ export async function refillUpcomingQueue(tournamentId: string, minPreview = 4, 
 
   const tournament = await prisma.tournament.findUnique({
     where: { id: tournamentId },
-    select: { scheduledEnd: true },
+    select: { type: true, scheduledEnd: true },
   });
+  if (tournament?.type !== "RANDOM_PAIRING") return { created: 0, remainingInQueue: 0 };
   if (tournament?.scheduledEnd && tournament.scheduledEnd.getTime() - Date.now() < 20 * 60 * 1000) {
     return { created: 0, remainingInQueue: 0 };
   }
@@ -144,6 +152,10 @@ export async function refillUpcomingQueue(tournamentId: string, minPreview = 4, 
   return { created, remainingInQueue: pool.length - created * 4 };
 }
 
+export function refillUpcomingQueue(tournamentId: string, minPreview = 4, maxPreview?: number) {
+  return withTournamentLock(tournamentId, () => refillUpcomingQueueUnlocked(tournamentId, minPreview, maxPreview));
+}
+
 /** Assigns the oldest UPCOMING game to a free, enabled court and marks it READY. */
 export async function assignNextGameToFreeCourt(tournamentId: string) {
   const freeCourt = await prisma.court.findFirst({
@@ -173,7 +185,7 @@ export async function assignNextGameToFreeCourt(tournamentId: string) {
  * multiple courts might be open at once (after a draw, after a game
  * finishes, after a court is re-enabled), so all courts get used.
  */
-export async function assignAllFreeCourts(tournamentId: string) {
+async function assignAllFreeCourtsUnlocked(tournamentId: string) {
   const assignedGameIds: string[] = [];
   while (true) {
     const assigned = await assignNextGameToFreeCourt(tournamentId);
@@ -181,6 +193,10 @@ export async function assignAllFreeCourts(tournamentId: string) {
     assignedGameIds.push(assigned.id);
   }
   return assignedGameIds;
+}
+
+export function assignAllFreeCourts(tournamentId: string) {
+  return withTournamentLock(tournamentId, () => assignAllFreeCourtsUnlocked(tournamentId));
 }
 
 /** Adds a player back into the waiting pool / queue (e.g. after finishing a game, or a walk-in registrant). */

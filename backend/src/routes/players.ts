@@ -40,7 +40,12 @@ playersRouter.get("/", attachUser, async (req: AuthedRequest, res) => {
     },
     orderBy: { createdAt: "asc" },
   });
-  res.json(players.map(({ gamePlayers, ...player }) => ({ ...player, gamesPlayed: gamePlayers.length })));
+  const canSeeContacts = req.userId ? await canManageTournament(req, String(tournamentId)) : false;
+  res.json(players.map(({ gamePlayers, contact, ...player }) => ({
+    ...player,
+    ...(canSeeContacts ? { contact } : {}),
+    gamesPlayed: gamePlayers.length,
+  })));
 });
 
 // Admin can edit skill level or mark a player as LEFT (opens them up for substitution elsewhere)

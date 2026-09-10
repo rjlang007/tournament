@@ -22,6 +22,13 @@ import { rafflesRouter } from "./routes/raffles";
 import { attachUser, requireAuth, canManageTournament, AuthedRequest } from "./lib/auth";
 
 const app = express();
+app.use((req, res, next) => {
+  const startedAt = Date.now();
+  res.on("finish", () => {
+    if (req.path !== "/health") console.log(JSON.stringify({ method: req.method, path: req.path, status: res.statusCode, durationMs: Date.now() - startedAt }));
+  });
+  next();
+});
 app.use(cors({
   origin: process.env.CORS_ORIGIN || "http://localhost:5173",
   credentials: true,
@@ -30,6 +37,14 @@ app.use(express.json());
 app.use(cookieParser());
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
+app.get("/health/ready", async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ ok: true, database: "ready" });
+  } catch {
+    res.status(503).json({ ok: false, database: "unavailable" });
+  }
+});
 
 app.use("/api/auth", authRouter);
 app.use("/api/accounts", accountsRouter);
@@ -126,6 +141,11 @@ app.get("*", (_req, res, next) => {
   });
 });
 
+app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("Unhandled request error", error);
+  res.status(500).json({ error: "Internal server error." });
+});
+
 const httpServer = createServer(app);
 initSocket(httpServer);
 
@@ -151,11 +171,11 @@ setInterval(async () => {
   for (const t of dueTournaments) {
     if (await countUnfinishedGames(t.id) > 0) continue;
     const standings = await computeLeaderboard(t.id);
-    await prisma.tournament.update({
-      where: { id: t.id },
+    const finalized = await prisma.tournament.updateMany({
+      where: { id: t.id, status: "ACTIVE", resultsFinalizedAt: null },
       data: { status: "COMPLETED", resultsFinalizedAt: now, finalStandings: standings as any },
     });
-    broadcastTournamentUpdate(t.id, "tournament:changed");
+    if (finalized.count === 1) broadcastTournamentUpdate(t.id, "tournament:changed");
   }
 }, 5000);
 

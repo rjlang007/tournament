@@ -62,6 +62,9 @@ export default function CourtControl() {
   const [locationAddress, setLocationAddress] = useState("");
   const [locationLatitude, setLocationLatitude] = useState<number | null>(null);
   const [locationLongitude, setLocationLongitude] = useState<number | null>(null);
+  const [auditLogs, setAuditLogs] = useState<Array<{ id: string; action: string; entityType: string; createdAt: string; actor?: { username: string } | null }>>([]);
+  const [auditOpen, setAuditOpen] = useState(false);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
 
   // Finalize flow: null = closed. Otherwise holds the preview from
   // /finalize/check (current standings + any podium ties) so the operator
@@ -129,6 +132,35 @@ export default function CourtControl() {
     setDrawnGames(freshlyDrawn.length > 0 ? freshlyDrawn : data.upNext);
     setUpNext(data.upNext);
     setWaitingCount(data.waitingCount);
+  };
+
+  const emergencyPause = async () => {
+    if (!window.confirm("Pause every active court and preserve each game's remaining time?")) return;
+    await api.post(`/tournaments/${tournamentId}/emergency-pause`);
+    load();
+  };
+
+  const emergencyResume = async () => {
+    await api.post(`/tournaments/${tournamentId}/emergency-resume`);
+    load();
+  };
+
+  const recoverTournament = async () => {
+    if (!window.confirm("Repair orphaned queued/playing player states? This will not create games.")) return;
+    setRecoveryBusy(true);
+    try {
+      const { data } = await api.post(`/tournaments/${tournamentId}/recover`);
+      window.alert(`${data.repairedPlayers} player state${data.repairedPlayers === 1 ? "" : "s"} repaired.`);
+      load();
+    } finally {
+      setRecoveryBusy(false);
+    }
+  };
+
+  const openAudit = async () => {
+    const { data } = await api.get(`/tournaments/${tournamentId}/audit`);
+    setAuditLogs(data);
+    setAuditOpen(true);
   };
 
   const gameAction = async (gameId: string, action: "start" | "pause" | "resume") => {
@@ -354,9 +386,32 @@ export default function CourtControl() {
           <button onClick={openSchedule} className="secondary-button flex-1 px-3 py-1.5 text-sm sm:flex-none">Set schedule</button>
           <button onClick={() => extend(30)} className="secondary-button flex-1 px-3 py-1.5 text-sm sm:flex-none">+30 min</button>
           <button onClick={() => extend(60)} className="secondary-button flex-1 px-3 py-1.5 text-sm sm:flex-none">+1 hr</button>
+          <button onClick={emergencyPause} className="secondary-button flex-1 px-3 py-1.5 text-sm sm:flex-none">Emergency pause</button>
+          <button onClick={emergencyResume} className="secondary-button flex-1 px-3 py-1.5 text-sm sm:flex-none">Resume courts</button>
+          <button onClick={recoverTournament} disabled={recoveryBusy} className="secondary-button flex-1 px-3 py-1.5 text-sm sm:flex-none">{recoveryBusy ? "Repairing..." : "Repair states"}</button>
+          <button onClick={openAudit} className="secondary-button flex-1 px-3 py-1.5 text-sm sm:flex-none">Audit history</button>
           <button onClick={openFinalizeCheck} className="flex-1 rounded-xl bg-red-500/80 px-3 py-1.5 text-sm font-semibold sm:flex-none">Finalize now</button>
         </div>
       </div>
+
+      {auditOpen && (
+        <div className="mobile-modal-shell" onClick={() => setAuditOpen(false)}>
+          <div className="mobile-modal-card max-w-lg" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <h3 className="font-display text-lg font-bold">Audit history</h3>
+              <button onClick={() => setAuditOpen(false)} className="secondary-button px-3 py-1 text-sm">Close</button>
+            </div>
+            <div className="max-h-80 space-y-2 overflow-y-auto">
+              {auditLogs.length === 0 ? <p className="text-sm text-white/50">No actions recorded yet.</p> : auditLogs.map((log) => (
+                <div key={log.id} className="rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm">
+                  <div className="font-semibold text-white">{log.action}</div>
+                  <div className="mt-1 text-xs text-white/45">{new Date(log.createdAt).toLocaleString()} · {log.actor?.username ?? "System"}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {scheduleOpen && (
         <div className="mobile-modal-shell" onClick={() => setScheduleOpen(false)}>

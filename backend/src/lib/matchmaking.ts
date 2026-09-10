@@ -18,29 +18,42 @@ export type ProposedPairing = {
   playerB: QueuedPlayer;
 };
 
-/**
- * Skill-pairing rule (as confirmed with the tournament director):
- *
- *   ADVANCE  <-> BEGINNER   allowed
- *   AVERAGE  <-> AVERAGE    allowed
- *   AVERAGE  <-> BEGINNER   allowed
- *
- *   ADVANCE  <-> ADVANCE    NOT allowed
- *   ADVANCE  <-> AVERAGE    NOT allowed
- *   BEGINNER <-> BEGINNER   NOT allowed
- *
- * In short: an Advance player is always balanced out with a Beginner.
- * Average is the "flexible" tier that can play Average or Beginner.
- * No two players of the exact same level pair up, except Average-Average.
- */
+/** Skill combinations that can form a doubles team. */
 export function isEligiblePair(a: SkillLevel, b: SkillLevel): boolean {
   const pair = [a, b].sort().join("-");
   const allowed = new Set([
+    "ADVANCE-AVERAGE",
     "ADVANCE-BEGINNER",
     "AVERAGE-AVERAGE",
     "AVERAGE-BEGINNER",
+    "BEGINNER-BEGINNER",
   ]);
   return allowed.has(pair);
+}
+
+type TeamSkillPair = readonly [SkillLevel, SkillLevel];
+
+function teamSkillPairKey(team: TeamSkillPair): string {
+  return team.slice().sort().join("-");
+}
+
+/**
+ * A valid teammate pair is not automatically a fair opponent pair. Keep the
+ * allowed doubles matchups explicit so a close numeric score cannot create a
+ * lopsided skill composition. In particular, Beginner-Beginner never faces
+ * Beginner-Advance or Beginner-Average, and Average-Beginner never faces
+ * Average-Average or Average-Advance.
+ */
+export function isEligibleTeamMatchup(teamA: TeamSkillPair, teamB: TeamSkillPair): boolean {
+  const matchup = [teamSkillPairKey(teamA), teamSkillPairKey(teamB)].sort().join("|");
+  return new Set([
+    "ADVANCE-AVERAGE|ADVANCE-AVERAGE",
+    "ADVANCE-BEGINNER|ADVANCE-BEGINNER",
+    "ADVANCE-BEGINNER|AVERAGE-AVERAGE",
+    "AVERAGE-AVERAGE|AVERAGE-AVERAGE",
+    "AVERAGE-BEGINNER|AVERAGE-BEGINNER",
+    "BEGINNER-BEGINNER|BEGINNER-BEGINNER",
+  ]).has(matchup);
 }
 
 /** Numeric skill score used only to compare overall TEAM strength (not for pairing eligibility). */
@@ -160,6 +173,10 @@ export function buildDoublesGame(pool: QueuedPlayer[], options: MatchmakingOptio
           if (d === a || d === b || !isEligiblePair(shuffled[c].skillLevel, shuffled[d].skillLevel)) continue;
           const teamA: [QueuedPlayer, QueuedPlayer] = [shuffled[a], shuffled[b]];
           const teamB: [QueuedPlayer, QueuedPlayer] = [shuffled[c], shuffled[d]];
+            if (!isEligibleTeamMatchup(
+              [teamA[0].skillLevel, teamA[1].skillLevel],
+              [teamB[0].skillLevel, teamB[1].skillLevel]
+            )) continue;
           const selected = [...teamA, ...teamB];
           const teamPairs: Array<[QueuedPlayer, QueuedPlayer]> = [teamA, teamB];
           const repeatPenalty = selected.reduce((penalty, player, index) => {

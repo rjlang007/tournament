@@ -12,7 +12,7 @@ accounts, player accounts, community features, live matchmaking, and results.
 
 ## What it does
 - Player registration with skill levels (Beginner / Average / Advance)
-- Random-pairing matchmaking that enforces the skill rule (Advance↔Beginner, Average↔Average, Average↔Beginner)
+- Random-pairing matchmaking that enforces balanced doubles skill matchups
 - "Bunot-bunot" / spin-the-wheel draw animation for random pairings
 - Fixed-bracket (single-elimination) tournaments for pre-registered pairs
 - Per-court enable/disable, supports 2+ courts
@@ -54,6 +54,21 @@ npm run dev                          # http://localhost:5173
 Open `http://localhost:5173`, create a tournament, and you're off. Open the
 Kiosk tab on a second monitor/TV as the public "what's happening now" board —
 that's the screen players/customers look at.
+
+### Backend validation
+```bash
+cd backend
+npm test
+npm run build
+```
+
+`GET /health` checks that the server process is running. `GET /health/ready`
+also verifies that PostgreSQL is reachable and returns HTTP 503 when the
+database is unavailable.
+
+Administrators can use the recovery endpoint to repair orphaned queued-player
+states after an interruption. Emergency pause/resume endpoints preserve each
+active game's remaining time and create audit records.
 
 ## Docker Compose
 ```bash
@@ -101,15 +116,21 @@ small, separate addition (a single admin password gate) — happy to add it
 whenever you want, but it's not part of this simplified version.
 
 ## How the skill-pairing rule works
-Implemented in `backend/src/lib/matchmaking.ts` (`isEligiblePair`):
-- Advance ↔ Beginner — allowed
-- Average ↔ Average — allowed
-- Average ↔ Beginner — allowed
-- Advance ↔ Advance, Advance ↔ Average, Beginner ↔ Beginner — **not allowed**
+Implemented in `backend/src/lib/matchmaking.ts` (`isEligibleTeamMatchup`). The
+draw only creates these balanced doubles matchups:
+- Beginner + Beginner ↔ Beginner + Beginner
+- Advance + Beginner ↔ Advance + Beginner
+- Advance + Beginner ↔ Average + Average
+- Average + Average ↔ Average + Average
+- Average + Beginner ↔ Average + Beginner
+- Advance + Average ↔ Advance + Average
+
+Beginner + Beginner cannot face Beginner + Advance or Beginner + Average.
+Average + Beginner cannot face Average + Average or Average + Advance.
 
 The draw (`drawEligiblePairs` / `buildDoublesGame`) shuffles the waiting pool
-(Fisher-Yates) and greedily builds valid doubles games from it. Anyone who
-can't be validly matched this round stays in the queue for the next draw.
+(Fisher-Yates) and builds only valid doubles games. Anyone who cannot be
+validly matched this round stays in the queue for the next draw.
 
 ## Where things live
 - `backend/prisma/schema.prisma` — data model (players, courts, games, queue, brackets)
@@ -132,3 +153,10 @@ can't be validly matched this round stays in the queue for the next draw.
 - The finalizer detects podium ties and supports either a tiebreak game or manual
   ordering. Tiebreak games split the selected players into teams as evenly as possible.
 - Uploaded files need a persistent Railway volume or external object storage.
+- Test a database restore before the event, and take a backup immediately
+  before and after the tournament. Database-backed queue locks prevent
+  concurrent draws from duplicating players, but they do not replace backups.
+- Configure your hosting provider's PostgreSQL automated backups and retention,
+  then perform a real restore drill before the event. Keep application logs and
+  database backups in separate systems; the server emits JSON request/error
+  logs suitable for Railway or another log collector.

@@ -80,6 +80,7 @@ model User {
 
   ownedTournaments Tournament[]
   playerProfiles   Player[]
+  auditLogs        AuditLog[]
   tournamentPosts  TournamentPost[]
   registrations    RegistrationSubmission[]
 }
@@ -181,6 +182,7 @@ model Tournament {
   brackets   Bracket[]
   queue      QueueEntry[]
   raffleDraws RaffleDraw[]
+  auditLogs   AuditLog[]
 
   @@index([ownerId])
 }
@@ -238,6 +240,22 @@ model GamePlayer {
 
   @@unique([gameId, playerId])
   @@index([playerId])
+}
+
+model AuditLog {
+  id           String      @id @default(uuid())
+  tournamentId String
+  tournament   Tournament  @relation(fields: [tournamentId], references: [id], onDelete: Cascade)
+  actorId      String?
+  actor        User?       @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action       String
+  entityType   String
+  entityId     String?
+  details      Json?
+  createdAt    DateTime    @default(now())
+
+  @@index([tournamentId, createdAt])
+  @@index([actorId])
 }
 
 model RaffleDraw {
