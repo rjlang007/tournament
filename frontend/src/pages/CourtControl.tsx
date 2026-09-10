@@ -50,11 +50,13 @@ export default function CourtControl() {
   const [newCourtLabel, setNewCourtLabel] = useState("");
   const [drawnGames, setDrawnGames] = useState<Game[] | null>(null);
   const [upNext, setUpNext] = useState<Game[]>([]);
+  const [finishedGames, setFinishedGames] = useState<Game[]>([]);
   const [queueEntries, setQueueEntries] = useState<Array<{ id: string; playerId: string; player: { id: string; name: string; skillLevel: string } }>>([]);
   const [waitingCount, setWaitingCount] = useState(0);
   const [finishingGame, setFinishingGame] = useState<Game | null>(null);
   const [scoreA, setScoreA] = useState("");
   const [scoreB, setScoreB] = useState("");
+  const [resultReason, setResultReason] = useState("");
   const [scheduleOpen, setScheduleOpen] = useState(false);
   const [scheduleStart, setScheduleStart] = useState("");
   const [scheduleEnd, setScheduleEnd] = useState("");
@@ -82,6 +84,7 @@ export default function CourtControl() {
       setWaitingCount(r.data.waitingCount);
     });
     api.get(`/queue/${tournamentId}`).then((r) => setQueueEntries(r.data));
+    api.get(`/games/finished/${tournamentId}`).then((r) => setFinishedGames(r.data));
     api.get(`/tournaments/${tournamentId}`).then((r) => {
       setTournament(r.data);
       setLocationName(r.data.locationName ?? "");
@@ -183,10 +186,26 @@ export default function CourtControl() {
       window.alert("The winning team must have the higher score.");
       return;
     }
-    await api.post(`/games/${finishingGame.id}/finish`, { winningTeam, scoreA: finalScoreA, scoreB: finalScoreB });
+    if (finishingGame.status === "FINISHED") {
+      if (resultReason.trim().length < 3) {
+        window.alert("Enter a reason for correcting this result.");
+        return;
+      }
+      await api.patch(`/games/${finishingGame.id}/result`, { winningTeam, scoreA: finalScoreA, scoreB: finalScoreB, reason: resultReason.trim() });
+    } else {
+      await api.post(`/games/${finishingGame.id}/finish`, { winningTeam, scoreA: finalScoreA, scoreB: finalScoreB });
+    }
     setFinishingGame(null);
     setScoreA("");
     setScoreB("");
+    setResultReason("");
+  };
+
+  const editResult = (game: Game) => {
+    setFinishingGame(game);
+    setScoreA(game.scoreA == null ? "" : String(game.scoreA));
+    setScoreB(game.scoreB == null ? "" : String(game.scoreB));
+    setResultReason("");
   };
 
   const cancelGame = async (gameId: string) => {
@@ -582,12 +601,13 @@ export default function CourtControl() {
       {finishingGame && (
         <div className="mobile-modal-shell" onClick={() => setFinishingGame(null)}>
           <div className="mobile-modal-card max-w-sm" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-display text-lg font-bold mb-1">Who won?</h3>
+            <h3 className="font-display text-lg font-bold mb-1">{finishingGame.status === "FINISHED" ? "Correct game result" : "Who won?"}</h3>
             <p className="text-xs text-white/40 mb-4">Enter both final scores. The team with the higher score must be selected as the winner.</p>
             <div className="grid grid-cols-2 gap-3 mb-4">
               <label className="text-xs text-white/50">Team A score<input required type="number" min="0" value={scoreA} onChange={(event) => setScoreA(event.target.value)} className="field mt-1" /></label>
               <label className="text-xs text-white/50">Team B score<input required type="number" min="0" value={scoreB} onChange={(event) => setScoreB(event.target.value)} className="field mt-1" /></label>
             </div>
+            {finishingGame.status === "FINISHED" && <label className="mb-4 block text-xs text-white/50">Correction reason<textarea value={resultReason} onChange={(event) => setResultReason(event.target.value)} placeholder="Explain the score or winner correction" className="field mt-1 min-h-20" maxLength={500} /></label>}
             <div className="grid grid-cols-2 gap-3 mb-3">
               <button
                 disabled={!scoreA.trim() || !scoreB.trim()}
@@ -698,6 +718,28 @@ export default function CourtControl() {
           );
         })}
       </div>
+
+      <section className="mt-8">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h3 className="font-display text-lg font-bold">Finished Games · Editable Results</h3>
+          <span className="text-xs uppercase tracking-[0.18em] text-white/45">{finishedGames.length} recorded</span>
+        </div>
+        <div className="space-y-2">
+          {finishedGames.length === 0 && <p className="rounded-2xl border border-dashed border-white/10 p-4 text-sm text-white/40">Finished games will appear here with their result history.</p>}
+          {finishedGames.map((game) => (
+            <div key={game.id} className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="text-sm">
+                  <div className="text-white/80"><TeamNames game={game} team="A" /> <span className="mx-2 text-ball">{game.scoreA} - {game.scoreB}</span> <TeamNames game={game} team="B" /></div>
+                  <div className="mt-1 text-xs text-white/40">Winner: Team {game.winningTeam} · {game.finishedAt ? new Date(game.finishedAt).toLocaleString() : ""}</div>
+                </div>
+                <button type="button" onClick={() => editResult(game)} className="secondary-button px-3 py-1.5 text-sm">Edit result</button>
+              </div>
+              {game.resultHistory && game.resultHistory.length > 0 && <div className="mt-3 border-t border-white/10 pt-2 text-xs text-white/45">History: {game.resultHistory.map((revision) => `${revision.scoreA}-${revision.scoreB} Team ${revision.winningTeam}${revision.reason ? ` (${revision.reason})` : ""}`).join(" → ")}</div>}
+            </div>
+          ))}
+        </div>
+      </section>
 
       <div className="mt-8 grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
         <div>

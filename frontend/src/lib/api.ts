@@ -106,7 +106,21 @@ export type Game = {
   remainingSeconds: number;
   players: GamePlayer[];
   winningTeam?: "A" | "B" | null;
+  scoreA?: number | null;
+  scoreB?: number | null;
+  finishedAt?: string | null;
+  resultHistory?: GameResultRevision[];
   isTiebreaker?: boolean;
+};
+
+export type GameResultRevision = {
+  id: string;
+  winningTeam: "A" | "B";
+  scoreA: number;
+  scoreB: number;
+  reason?: string | null;
+  createdAt: string;
+  actor?: { username: string } | null;
 };
 
 export type Tournament = {

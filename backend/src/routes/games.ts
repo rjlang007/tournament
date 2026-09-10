@@ -4,7 +4,8 @@ import { broadcastTournamentUpdate } from "../socket";
 import { enqueuePlayer, refillUpcomingQueue, assignAllFreeCourts } from "../lib/queue";
 import { recordBracketResult } from "../lib/bracket";
 import { recordAudit } from "../lib/audit";
-import { AuthedRequest } from "../lib/auth";
+import { AuthedRequest, canManageTournament } from "../lib/auth";
+import { computeLeaderboard } from "../lib/leaderboard";
 
 export const gamesRouter = Router();
 
@@ -12,6 +13,11 @@ const gameInclude = {
   players: { include: { player: true } },
   court: true,
 };
+
+function validateResult(winningTeam: unknown, scoreA: unknown, scoreB: unknown): winningTeam is "A" | "B" {
+  if ((winningTeam !== "A" && winningTeam !== "B") || typeof scoreA !== "number" || typeof scoreB !== "number" || !Number.isInteger(scoreA) || !Number.isInteger(scoreB) || scoreA < 0 || scoreB < 0 || scoreA > 99 || scoreB > 99 || scoreA === scoreB) return false;
+  return winningTeam === "A" ? scoreA > scoreB : scoreB > scoreA;
+}
 
 function withCurrentRemainingSeconds<T extends { status: string; startedAt: Date | null; durationSeconds: number; remainingSeconds: number }>(game: T) {
   if (game.status !== "IN_PROGRESS" || !game.startedAt) return game;
@@ -45,6 +51,24 @@ gamesRouter.get("/board/:tournamentId", async (req, res) => {
     upNext: upNext.map(withCurrentRemainingSeconds),
     waitingCount,
   });
+});
+
+gamesRouter.get("/finished/:tournamentId", async (req, res) => {
+  const games = await prisma.game.findMany({
+    where: { tournamentId: req.params.tournamentId, status: "FINISHED" },
+    include: { players: { include: { player: true } }, court: true, resultHistory: { orderBy: { createdAt: "asc" }, include: { actor: { select: { username: true } } } } },
+    orderBy: { finishedAt: "desc" },
+    take: 100,
+  });
+  res.json(games);
+});
+
+gamesRouter.get("/:id/history", async (req: AuthedRequest, res) => {
+  const game = await prisma.game.findUnique({ where: { id: req.params.id }, select: { tournamentId: true, status: true } });
+  if (!game) return res.status(404).json({ error: "Game not found." });
+  if (!(await canManageTournament(req, game.tournamentId))) return res.status(403).json({ error: "You can only view game history for tournaments you own." });
+  const history = await prisma.gameResultHistory.findMany({ where: { gameId: req.params.id }, orderBy: { createdAt: "asc" }, include: { actor: { select: { username: true } } } });
+  res.json(history);
 });
 
 // Staff sets/edits the timer length for a game (default 10 min, editable before or during)
@@ -148,9 +172,10 @@ gamesRouter.post("/:id/finish", async (req, res) => {
     scoreB?: number;
   };
 
-  if (!winningTeam || typeof scoreA !== "number" || typeof scoreB !== "number" || !Number.isInteger(scoreA) || !Number.isInteger(scoreB) || scoreA < 0 || scoreB < 0 || scoreA > 99 || scoreB > 99 || scoreA === scoreB) {
+  if (!validateResult(winningTeam, scoreA, scoreB)) {
     return res.status(400).json({ error: "A winning team and final, non-tied scores from 0 to 99 are required." });
   }
+  if (typeof scoreA !== "number" || typeof scoreB !== "number" || !winningTeam) return res.status(400).json({ error: "Invalid result." });
   if ((winningTeam === "A" && scoreA < scoreB) || (winningTeam === "B" && scoreB < scoreA)) {
     return res.status(400).json({ error: "The winning team must have the higher score." });
   }
@@ -169,6 +194,9 @@ gamesRouter.post("/:id/finish", async (req, res) => {
       });
       if (claimed.count !== 1) throw new Error("Game state changed; refresh and try again.");
       const finished = await tx.game.findUniqueOrThrow({ where: { id: req.params.id }, include: gameInclude });
+      await tx.gameResultHistory.create({
+        data: { gameId: finished.id, actorId: (req as AuthedRequest).userId, winningTeam, scoreA, scoreB, reason: "Initial result" },
+      });
 
       if (!finished.bracketMatchId) {
         for (const gp of finished.players) {
@@ -209,16 +237,43 @@ gamesRouter.post("/:id/finish", async (req, res) => {
     await refillUpcomingQueue(game.tournamentId);
     await assignAllFreeCourts(game.tournamentId);
   }
-  await recordAudit(prisma, {
-    tournamentId: game.tournamentId,
-    actorId: (req as AuthedRequest).userId,
-    action: "GAME_CANCELLED",
-    entityType: "Game",
-    entityId: game.id,
-  });
-
   broadcastTournamentUpdate(game.tournamentId, "games:changed");
   res.json(game);
+});
+
+gamesRouter.patch("/:id/result", async (req: AuthedRequest, res) => {
+  const { winningTeam, scoreA, scoreB, reason } = req.body as { winningTeam?: "A" | "B"; scoreA?: number; scoreB?: number; reason?: string };
+  if (!validateResult(winningTeam, scoreA, scoreB)) return res.status(400).json({ error: "A winning team and final, non-tied scores from 0 to 99 are required." });
+  if (reason !== undefined && (typeof reason !== "string" || reason.trim().length < 3 || reason.length > 500)) return res.status(400).json({ error: "A correction reason of 3 to 500 characters is required." });
+
+  const current = await prisma.game.findUnique({ where: { id: req.params.id }, select: { tournamentId: true, status: true, winningTeam: true, scoreA: true, scoreB: true } });
+  if (!current) return res.status(404).json({ error: "Game not found." });
+  if (!(await canManageTournament(req, current.tournamentId))) return res.status(403).json({ error: "You can only edit games in tournaments you own." });
+  if (current.status !== "FINISHED") return res.status(400).json({ error: "Only finished games can have their result edited." });
+  if (!reason?.trim()) return res.status(400).json({ error: "A correction reason is required." });
+  const correctedScoreA = scoreA as number;
+  const correctedScoreB = scoreB as number;
+  const correctedWinningTeam = winningTeam as "A" | "B";
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const claimed = await tx.game.updateMany({
+      where: { id: req.params.id, status: "FINISHED", winningTeam: current.winningTeam, scoreA: current.scoreA, scoreB: current.scoreB },
+      data: { winningTeam: correctedWinningTeam, scoreA: correctedScoreA, scoreB: correctedScoreB },
+    });
+    if (claimed.count !== 1) throw new Error("Game result changed; refresh and try again.");
+    await tx.gameResultHistory.create({ data: { gameId: req.params.id, actorId: req.userId, winningTeam: correctedWinningTeam, scoreA: correctedScoreA, scoreB: correctedScoreB, reason: reason.trim() } });
+    await recordAudit(tx, { tournamentId: current.tournamentId, actorId: req.userId, action: "GAME_RESULT_CORRECTED", entityType: "Game", entityId: req.params.id, details: { previous: current, next: { winningTeam: correctedWinningTeam, scoreA: correctedScoreA, scoreB: correctedScoreB }, reason: reason.trim() } });
+    return tx.game.findUniqueOrThrow({ where: { id: req.params.id }, include: gameInclude });
+  });
+
+  const tournament = await prisma.tournament.findUnique({ where: { id: updated.tournamentId }, select: { resultsFinalizedAt: true } });
+  if (tournament?.resultsFinalizedAt) {
+    const standings = await computeLeaderboard(updated.tournamentId);
+    await prisma.tournament.update({ where: { id: updated.tournamentId }, data: { finalStandings: standings as any } });
+  }
+  broadcastTournamentUpdate(updated.tournamentId, "games:changed");
+  broadcastTournamentUpdate(updated.tournamentId, "leaderboard:changed");
+  res.json(updated);
 });
 
 gamesRouter.post("/:id/cancel", async (req, res) => {

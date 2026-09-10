@@ -81,6 +81,7 @@ model User {
   ownedTournaments Tournament[]
   playerProfiles   Player[]
   auditLogs        AuditLog[]
+  gameResultHistory GameResultHistory[]
   tournamentPosts  TournamentPost[]
   registrations    RegistrationSubmission[]
 }
@@ -225,6 +226,7 @@ model Game {
   createdAt DateTime @default(now())
 
   players GamePlayer[]
+  resultHistory GameResultHistory[]
 
   @@index([tournamentId, status])
   @@index([courtId])
@@ -240,6 +242,22 @@ model GamePlayer {
 
   @@unique([gameId, playerId])
   @@index([playerId])
+}
+
+model GameResultHistory {
+  id          String   @id @default(uuid())
+  gameId      String
+  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  actorId     String?
+  actor       User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  winningTeam GameTeam
+  scoreA      Int
+  scoreB      Int
+  reason      String?
+  createdAt   DateTime @default(now())
+
+  @@index([gameId, createdAt])
+  @@index([actorId])
 }
 
 model AuditLog {
