@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api, Court, FinalizeCheck, Game, Player, Tournament, TieGroup } from "../lib/api";
 import { useTournamentSocket } from "../lib/socket";
@@ -42,6 +42,35 @@ function useCountdown(scheduledEnd?: string | null) {
   return remaining;
 }
 
+function useModalFocus<T extends HTMLElement>(open: boolean, onClose: () => void) {
+  const modalRef = useRef<T>(null);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    if (!open) return;
+    const modal = modalRef.current;
+    if (!modal) return;
+    const previousOverflow = document.body.style.overflow;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    document.body.style.overflow = "hidden";
+    modal.scrollIntoView({ block: "center", behavior: "smooth" });
+    const firstControl = modal.querySelector<HTMLElement>("input, textarea, select, button, [tabindex]:not([tabindex='-1'])");
+    window.requestAnimationFrame(() => (firstControl ?? modal).focus());
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onCloseRef.current();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", handleKeyDown);
+      previouslyFocused?.focus();
+    };
+  }, [open]);
+
+  return modalRef;
+}
+
 export default function CourtControl() {
   const { tournamentId } = useParams();
   const [courts, setCourts] = useState<Court[]>([]);
@@ -75,6 +104,9 @@ export default function CourtControl() {
   const [resolvingTie, setResolvingTie] = useState<TieGroup | null>(null);
   const [manualOrder, setManualOrder] = useState<string[]>([]);
   const [finalizeBusy, setFinalizeBusy] = useState(false);
+  const auditModalRef = useModalFocus<HTMLDivElement>(auditOpen, () => setAuditOpen(false));
+  const scheduleModalRef = useModalFocus<HTMLDivElement>(scheduleOpen, () => setScheduleOpen(false));
+  const resultModalRef = useModalFocus<HTMLDivElement>(!!finishingGame, () => setFinishingGame(null));
 
   const load = () => {
     api.get("/courts", { params: { tournamentId } }).then((r) => setCourts(r.data));
@@ -306,6 +338,7 @@ export default function CourtControl() {
     setResolvingTie(null);
     setManualOrder([]);
   };
+  const finalizeModalRef = useModalFocus<HTMLDivElement>(!!finalizeCheck, closeFinalize);
 
   // Step 2a: operator confirms - stop everything and lock in standings
   // as computed (used both when there's no tie, and for "finalize anyway"
@@ -415,9 +448,9 @@ export default function CourtControl() {
 
       {auditOpen && (
         <div className="mobile-modal-shell" onClick={() => setAuditOpen(false)}>
-          <div className="mobile-modal-card max-w-lg" onClick={(event) => event.stopPropagation()}>
+          <div ref={auditModalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="audit-title" className="mobile-modal-card max-w-lg" onClick={(event) => event.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between gap-3">
-              <h3 className="font-display text-lg font-bold">Audit history</h3>
+              <h3 id="audit-title" className="font-display text-lg font-bold">Audit history</h3>
               <button onClick={() => setAuditOpen(false)} className="secondary-button px-3 py-1 text-sm">Close</button>
             </div>
             <div className="max-h-80 space-y-2 overflow-y-auto">
@@ -434,8 +467,8 @@ export default function CourtControl() {
 
       {scheduleOpen && (
         <div className="mobile-modal-shell" onClick={() => setScheduleOpen(false)}>
-          <div className="mobile-modal-card max-w-sm" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-display text-lg font-bold mb-4">Tournament schedule</h3>
+          <div ref={scheduleModalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="schedule-title" className="mobile-modal-card max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <h3 id="schedule-title" className="font-display text-lg font-bold mb-4">Tournament schedule</h3>
             <label className="text-xs uppercase tracking-wide text-white/50">Start</label>
             <input
               type="datetime-local"
@@ -484,13 +517,17 @@ export default function CourtControl() {
 
       {finalizeCheck && (
         <div className="mobile-modal-shell" onClick={closeFinalize}>
-          <div
+          <div ref={finalizeModalRef}
+            tabIndex={-1}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="finalize-title"
             className="mobile-modal-card max-w-md"
             onClick={(e) => e.stopPropagation()}
           >
             {!resolvingTie ? (
               <>
-                <h3 className="font-display text-lg font-bold mb-1">
+                <h3 id="finalize-title" className="font-display text-lg font-bold mb-1">
                   {finalizeCheck.ties.length > 0 ? "There's a tie for the podium" : "Finalize results?"}
                 </h3>
                 <p className="text-xs text-white/40 mb-4">
@@ -600,8 +637,8 @@ export default function CourtControl() {
 
       {finishingGame && (
         <div className="mobile-modal-shell" onClick={() => setFinishingGame(null)}>
-          <div className="mobile-modal-card max-w-sm" onClick={(e) => e.stopPropagation()}>
-            <h3 className="font-display text-lg font-bold mb-1">{finishingGame.status === "FINISHED" ? "Correct game result" : "Who won?"}</h3>
+          <div ref={resultModalRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="result-title" className="mobile-modal-card max-w-sm" onClick={(e) => e.stopPropagation()}>
+            <h3 id="result-title" className="font-display text-lg font-bold mb-1">{finishingGame.status === "FINISHED" ? "Correct game result" : "Who won?"}</h3>
             <p className="text-xs text-white/40 mb-4">Enter both final scores. The team with the higher score must be selected as the winner.</p>
             <div className="grid grid-cols-2 gap-3 mb-4">
               <label className="text-xs text-white/50">Team A score<input required type="number" min="0" value={scoreA} onChange={(event) => setScoreA(event.target.value)} className="field mt-1" /></label>
