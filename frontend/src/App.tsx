@@ -10,6 +10,7 @@ import Kiosk from "./pages/Kiosk";
 import Leaderboard from "./pages/Leaderboard";
 import BracketView from "./pages/BracketView";
 import TournamentLogin from "./pages/TournamentLogin";
+import TournamentLocation from "./pages/TournamentLocation";
 import Register from "./pages/community/Register";
 import PlatformAdmin from "./pages/PlatformAdmin";
 import Footer from "./components/Footer";
@@ -67,6 +68,7 @@ function Shell() {
           <div className="mobile-nav-links flex min-w-0 flex-nowrap items-center gap-1 overflow-x-auto pb-1 sm:flex-wrap sm:gap-2">
             {user && (user.role === "ADMIN" || user.role === "SUPERADMIN") && <NavLink to={`${base}/registration`} className={linkClass}>Registration</NavLink>}
             {user && (user.role === "ADMIN" || user.role === "SUPERADMIN") && <NavLink to={`${base}/courts`} className={linkClass}>Court Control</NavLink>}
+            {user && (user.role === "ADMIN" || user.role === "SUPERADMIN") && <NavLink to={`${base}/location`} className={linkClass}>Location</NavLink>}
             <NavLink to={`${base}/kiosk`} className={linkClass}>Kiosk</NavLink>
             <NavLink to={`${base}/leaderboard`} className={linkClass}>Leaderboard</NavLink>
             <NavLink to={`${base}/bracket`} className={linkClass}>Bracket</NavLink>
@@ -82,6 +84,7 @@ function Shell() {
           <Routes>
             <Route path="registration" element={user && (user.role === "ADMIN" || user.role === "SUPERADMIN") ? <Registration /> : <Navigate to="/login" state={{ from: `${base}/registration` }} replace />} />
             <Route path="courts" element={user && (user.role === "ADMIN" || user.role === "SUPERADMIN") ? <CourtControl /> : <Navigate to="/login" state={{ from: `${base}/courts` }} replace />} />
+            <Route path="location" element={user && (user.role === "ADMIN" || user.role === "SUPERADMIN") ? <TournamentLocation /> : <Navigate to="/login" state={{ from: `${base}/location` }} replace />} />
             <Route path="kiosk" element={<Kiosk />} />
             <Route path="leaderboard" element={<Leaderboard />} />
             <Route path="bracket" element={<BracketView />} />
