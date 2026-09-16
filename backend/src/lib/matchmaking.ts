@@ -18,42 +18,16 @@ export type ProposedPairing = {
   playerB: QueuedPlayer;
 };
 
-/** Skill combinations that can form a doubles team. */
+/** Any two approved players may form a doubles team. Skill is used for balance, not eligibility. */
 export function isEligiblePair(a: SkillLevel, b: SkillLevel): boolean {
-  const pair = [a, b].sort().join("-");
-  const allowed = new Set([
-    "ADVANCE-AVERAGE",
-    "ADVANCE-BEGINNER",
-    "AVERAGE-AVERAGE",
-    "AVERAGE-BEGINNER",
-    "BEGINNER-BEGINNER",
-  ]);
-  return allowed.has(pair);
+  return Boolean(a && b);
 }
 
 type TeamSkillPair = readonly [SkillLevel, SkillLevel];
 
-function teamSkillPairKey(team: TeamSkillPair): string {
-  return team.slice().sort().join("-");
-}
-
-/**
- * A valid teammate pair is not automatically a fair opponent pair. Keep the
- * allowed doubles matchups explicit so a close numeric score cannot create a
- * lopsided skill composition. In particular, Beginner-Beginner never faces
- * Beginner-Advance or Beginner-Average, and Average-Beginner never faces
- * Average-Average or Average-Advance.
- */
+/** Any two valid teams may play; numeric team balance decides which matchup is preferred. */
 export function isEligibleTeamMatchup(teamA: TeamSkillPair, teamB: TeamSkillPair): boolean {
-  const matchup = [teamSkillPairKey(teamA), teamSkillPairKey(teamB)].sort().join("|");
-  return new Set([
-    "ADVANCE-AVERAGE|ADVANCE-AVERAGE",
-    "ADVANCE-BEGINNER|ADVANCE-BEGINNER",
-    "ADVANCE-BEGINNER|AVERAGE-AVERAGE",
-    "AVERAGE-AVERAGE|AVERAGE-AVERAGE",
-    "AVERAGE-BEGINNER|AVERAGE-BEGINNER",
-    "BEGINNER-BEGINNER|BEGINNER-BEGINNER",
-  ]).has(matchup);
+  return teamA.length === 2 && teamB.length === 2;
 }
 
 /** Numeric skill score used only to compare overall TEAM strength (not for pairing eligibility). */
@@ -65,6 +39,11 @@ const SKILL_SCORE: Record<SkillLevel, number> = {
 
 function pairScore(pair: ProposedPairing): number {
   return SKILL_SCORE[pair.playerA.skillLevel] + SKILL_SCORE[pair.playerB.skillLevel];
+}
+
+/** Canonical identity for a four-player lineup, independent of team/order. */
+export function lineupKey(playerIds: readonly string[]): string {
+  return [...playerIds].sort().join("|");
 }
 
 /** Fisher-Yates shuffle - this is the "bunot-bunot" / spin-the-wheel draw. */
@@ -121,6 +100,7 @@ export type DoublesGame = {
 export type MatchmakingOptions = {
   finalPhase?: boolean;
   leaderIds?: Set<string>;
+  usedLineupKeys?: ReadonlySet<string>;
 };
 
 /**
@@ -178,6 +158,7 @@ export function buildDoublesGame(pool: QueuedPlayer[], options: MatchmakingOptio
               [teamB[0].skillLevel, teamB[1].skillLevel]
             )) continue;
           const selected = [...teamA, ...teamB];
+          if (options.usedLineupKeys?.has(lineupKey(selected.map((player) => player.id)))) continue;
           const teamPairs: Array<[QueuedPlayer, QueuedPlayer]> = [teamA, teamB];
           const repeatPenalty = selected.reduce((penalty, player, index) => {
             const teammate = teamPairs[Math.floor(index / 2)][index % 2 === 0 ? 1 : 0];

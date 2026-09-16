@@ -1,6 +1,6 @@
 import { prisma } from "./prisma";
 import { Prisma } from "@prisma/client";
-import { buildQueueBatch, QueuedPlayer } from "./matchmaking";
+import { buildQueueBatch, lineupKey, QueuedPlayer } from "./matchmaking";
 import { computeLeaderboard } from "./leaderboard";
 
 type DatabaseClient = typeof prisma | Prisma.TransactionClient;
@@ -65,9 +65,14 @@ async function refillUpcomingQueueUnlocked(tournamentId: string, minPreview = 4,
   });
 
   const finishedGames = await prisma.game.findMany({
-    where: { tournamentId, status: "FINISHED" },
+    where: { tournamentId, status: { not: "CANCELLED" } },
     select: { players: { select: { playerId: true, team: true } } },
   });
+  const usedLineupKeys = new Set(
+    finishedGames
+      .filter((game) => game.players.length === 4)
+      .map((game) => lineupKey(game.players.map((player) => player.playerId)))
+  );
   const recentPartners = new Map<string, Set<string>>();
   const recentOpponents = new Map<string, Set<string>>();
   for (const game of finishedGames) {
@@ -120,6 +125,7 @@ async function refillUpcomingQueueUnlocked(tournamentId: string, minPreview = 4,
   const { games } = buildQueueBatch(pool, slotsToFill, {
     finalPhase,
     leaderIds,
+    usedLineupKeys,
   });
 
   let created = 0;
