@@ -9,12 +9,13 @@ export const playersRouter = Router();
 // Admin registration: name + skill level (BEGINNER / AVERAGE / ADVANCE)
 playersRouter.post("/", async (req: AuthedRequest, res) => {
   const { tournamentId, name, contact, skillLevel } = req.body;
-  if (!tournamentId || !name || !["BEGINNER", "AVERAGE", "ADVANCE"].includes(skillLevel)) {
+  const playerName = typeof name === "string" ? name.trim() : "";
+  if (!tournamentId || playerName.length < 2 || playerName.length > 80 || !["BEGINNER", "AVERAGE", "ADVANCE"].includes(skillLevel)) {
     return res.status(400).json({ error: "tournamentId, name, and valid skillLevel are required" });
   }
   if (!(await canManageTournament(req, tournamentId))) return res.status(403).json({ error: "You can only edit players in tournaments you own." });
   const player = await prisma.player.create({
-    data: { tournamentId, name, contact, skillLevel },
+    data: { tournamentId, name: playerName, contact: typeof contact === "string" ? contact.trim() || null : null, skillLevel },
   });
 
   // For random-pairing tournaments, newly registered players go straight

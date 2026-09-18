@@ -13,15 +13,22 @@ export default function Registration() {
   const [name, setName] = useState("");
   const [contact, setContact] = useState("");
   const [skillLevel, setSkillLevel] = useState<SkillLevel>("BEGINNER");
+  const [error, setError] = useState("");
 
   const load = () => api.get("/players", { params: { tournamentId } }).then((r) => setPlayers(r.data));
   useEffect(() => { load(); }, [tournamentId]);
   useTournamentSocket(tournamentId, ["players:changed"], load);
 
   const register = async () => {
-    if (!name.trim()) return;
-    await api.post("/players", { tournamentId, name, contact, skillLevel });
-    setName(""); setContact("");
+    setError("");
+    if (name.trim().length < 2) { setError("Enter the player's name."); return; }
+    try {
+      await api.post("/players", { tournamentId, name: name.trim(), contact, skillLevel });
+      setName(""); setContact("");
+      load();
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.error || "Could not add this player.");
+    }
   };
 
   const updateStatus = async (id: string, status: string) => {
@@ -83,6 +90,7 @@ export default function Registration() {
           </div>
           <button onClick={register} className="action-button w-full lg:w-auto">Register</button>
         </div>
+        {error && <p className="mt-3 text-sm text-red-300" role="alert">{error}</p>}
       </section>}
 
       <section className="glass-panel p-4 sm:p-5">

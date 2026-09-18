@@ -10,6 +10,7 @@ export default function TournamentSetup() {
   const [type, setType] = useState<"RANDOM_PAIRING" | "FIXED_BRACKET">("RANDOM_PAIRING");
   const [skillLevel, setSkillLevel] = useState<"BEGINNER" | "AVERAGE" | "ADVANCE">("BEGINNER");
   const [joined, setJoined] = useState<Record<string, boolean>>({});
+  const [error, setError] = useState("");
   const navigate = useNavigate();
 
   const load = () => api.get("/tournaments").then((r) => setTournaments(r.data));
@@ -26,9 +27,14 @@ export default function TournamentSetup() {
   }
 
   const create = async () => {
-    if (!name.trim()) return;
-    const { data } = await api.post("/tournaments", { name, type });
-    navigate(`/t/${data.id}/registration`);
+    setError("");
+    if (name.trim().length < 2) { setError("Enter a tournament name."); return; }
+    try {
+      const { data } = await api.post("/tournaments", { name: name.trim(), type });
+      navigate(`/t/${data.id}/registration`);
+    } catch (requestError: any) {
+      setError(requestError?.response?.data?.error || "Could not create the tournament.");
+    }
   };
 
   const finishTournament = (id: string) => {
@@ -62,7 +68,10 @@ export default function TournamentSetup() {
               <div className="text-[10px] uppercase tracking-[0.28em] text-ball/80">Premium tournament platform</div>
               <h1 className="mt-2 font-display text-4xl font-bold tracking-tight text-ball sm:text-5xl">Dink Board</h1>
             </div>
-            <Link to="/" aria-label="Go to tournament dashboard" className="flex h-12 w-12 items-center justify-center rounded-2xl bg-ball/20 text-2xl ring-1 ring-ball/20">🏓</Link>
+            <div className="flex items-center gap-2">
+              {(user?.role === "ADMIN" || user?.role === "SUPERADMIN") && <Link to="/platform" className="secondary-button px-3 py-2 text-xs">Accounts</Link>}
+              <Link to="/" aria-label="Go to tournament dashboard" className="flex h-12 w-12 items-center justify-center rounded-2xl bg-ball/20 text-2xl ring-1 ring-ball/20">🏓</Link>
+            </div>
           </div>
 
           <p className="mb-8 max-w-lg text-sm leading-6 text-white/65">
@@ -110,6 +119,7 @@ export default function TournamentSetup() {
             <button onClick={create} className="action-button w-full py-3 text-base">
               Create Tournament
             </button>
+            {error && <p className="text-sm text-red-300" role="alert">{error}</p>}
           </div> : (
             <div className="rounded-2xl border border-ball/20 bg-ball/5 p-4 text-sm text-white/65">
               You are signed in as a player. Choose a tournament below to view its live games and standings.

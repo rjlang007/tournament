@@ -10,10 +10,12 @@ export const tournamentsRouter = Router();
 
 // Create a tournament - type is RANDOM_PAIRING or FIXED_BRACKET
 tournamentsRouter.post("/", async (req: AuthedRequest, res) => {
-  const { name, type } = req.body;
-  if (!name || !["RANDOM_PAIRING", "FIXED_BRACKET"].includes(type)) {
+  const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+  const type = req.body?.type;
+  if (name.length < 2 || name.length > 120 || !["RANDOM_PAIRING", "FIXED_BRACKET"].includes(type)) {
     return res.status(400).json({ error: "name and valid type are required" });
   }
+  if (!req.userId) return res.status(401).json({ error: "Not signed in." });
   const tournament = await prisma.tournament.create({ data: { name, type, ownerId: req.userId } });
   res.status(201).json(tournament);
 });

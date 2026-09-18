@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { attachUser, hashPassword, requireSuperAdmin, AuthedRequest } from "../lib/auth";
+import { attachUser, hashPassword, requireAdmin, requireSuperAdmin, AuthedRequest } from "../lib/auth";
 import { randomDefaultAvatarKey, defaultAvatarUrl } from "../lib/defaultAvatars";
 
 export const accountsRouter = Router();
@@ -12,9 +12,7 @@ const createAccountSchema = z.object({
   role: z.enum(["ADMIN", "PLAYER"]),
 });
 
-accountsRouter.use(attachUser, requireSuperAdmin);
-
-accountsRouter.get("/", async (_req, res) => {
+accountsRouter.get("/", attachUser, requireAdmin, async (_req, res) => {
   const users = await prisma.user.findMany({
     where: { role: { in: ["ADMIN", "PLAYER"] } },
     orderBy: [{ role: "asc" }, { username: "asc" }],
@@ -23,7 +21,7 @@ accountsRouter.get("/", async (_req, res) => {
   res.json(users);
 });
 
-accountsRouter.post("/", async (req: AuthedRequest, res) => {
+accountsRouter.post("/", attachUser, requireAdmin, async (req: AuthedRequest, res) => {
   const parsed = createAccountSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0].message });
   const { username, password, role } = parsed.data;
@@ -55,7 +53,7 @@ accountsRouter.post("/", async (req: AuthedRequest, res) => {
   });
 });
 
-accountsRouter.patch("/:id/approve-payment", async (req, res) => {
+accountsRouter.patch("/:id/approve-payment", attachUser, requireSuperAdmin, async (req, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.params.id } });
   if (!user || user.role !== "ADMIN") return res.status(404).json({ error: "Administrator account not found." });
   const now = new Date();

@@ -17,7 +17,12 @@ export default function PlatformAdmin() {
   const [priceMessage, setPriceMessage] = useState("");
 
   const load = () => api.get<Account[]>("/accounts").then((response) => setAccounts(response.data));
-  useEffect(() => { load(); api.get<{ monthlyPriceCents: number }>("/billing/settings").then((response) => setMonthlyPrice(response.data.monthlyPriceCents)); }, []);
+  useEffect(() => {
+    load();
+    if (user?.role === "SUPERADMIN") {
+      api.get<{ monthlyPriceCents: number }>("/billing/settings").then((response) => setMonthlyPrice(response.data.monthlyPriceCents / 100));
+    }
+  }, [user?.role]);
 
   async function savePrice(event: FormEvent) {
     event.preventDefault();
@@ -72,13 +77,13 @@ export default function PlatformAdmin() {
             <button className="action-button w-full">Create account</button>
           </form>
           <div className="space-y-6">
-            <form onSubmit={savePrice} className="glass-panel space-y-4 p-6">
+            {user?.role === "SUPERADMIN" && <form onSubmit={savePrice} className="glass-panel space-y-4 p-6">
               <div><h2 className="font-display text-2xl font-bold text-white">Monthly subscription</h2><p className="mt-1 text-sm text-white/55">Admins receive 15 free days, then each approval activates 30 more days.</p></div>
               <div><label className="field-label">Price per month</label><div className="flex items-center gap-2"><span className="text-white/55">$</span><input className="field" type="number" min="0" step="0.01" value={monthlyPrice} onChange={(event) => setMonthlyPrice(Number(event.target.value))} /></div></div>
               {priceMessage && <p className="text-sm text-ball">{priceMessage}</p>}
               <button className="action-button">Save subscription price</button>
-            </form>
-            <section className="glass-panel p-6"><div className="mb-4 flex items-center justify-between"><h2 className="font-display text-2xl font-bold text-white">Managed accounts</h2><span className="text-xs text-white/45">{user?.username}</span></div><div className="space-y-2">{accounts.map((account) => <div key={account.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3"><div><div className="text-white">{account.username}</div>{account.role === "ADMIN" && <div className="text-xs text-white/45">{account.subscriptionStatus || "TRIAL"} · expires {account.subscriptionExpiresAt ? new Date(account.subscriptionExpiresAt).toLocaleDateString() : "not set"}</div>}</div><div className="flex items-center gap-2"><span className="rounded-full border border-white/10 px-2 py-1 text-[10px] uppercase tracking-widest text-white/55">{account.role}</span>{account.role === "ADMIN" && <button onClick={() => approvePayment(account.id)} className="secondary-button px-3 py-2 text-xs text-emerald-300">Approve payment</button>}</div></div>)}</div></section>
+            </form>}
+            <section className="glass-panel p-6"><div className="mb-4 flex items-center justify-between"><h2 className="font-display text-2xl font-bold text-white">Managed accounts</h2><span className="text-xs text-white/45">{user?.username}</span></div><div className="space-y-2">{accounts.map((account) => <div key={account.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.03] p-3"><div><div className="text-white">{account.username}</div>{account.role === "ADMIN" && <div className="text-xs text-white/45">{account.subscriptionStatus || "TRIAL"} · expires {account.subscriptionExpiresAt ? new Date(account.subscriptionExpiresAt).toLocaleDateString() : "not set"}</div>}</div><div className="flex items-center gap-2"><span className="rounded-full border border-white/10 px-2 py-1 text-[10px] uppercase tracking-widest text-white/55">{account.role}</span>{user?.role === "SUPERADMIN" && account.role === "ADMIN" && <button onClick={() => approvePayment(account.id)} className="secondary-button px-3 py-2 text-xs text-emerald-300">Approve payment</button>}</div></div>)}</div></section>
           </div>
         </div>
       </div>

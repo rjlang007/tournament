@@ -115,7 +115,7 @@ export default function App() {
         <Route path="profile/:username" element={<Profile />} />
         <Route path="members" element={<Members />} />
       </Route>
-      <Route path="/platform" element={user?.role === "SUPERADMIN" ? <PlatformAdmin /> : <Navigate to="/" replace />} />
+      <Route path="/platform" element={user && (user.role === "ADMIN" || user.role === "SUPERADMIN") ? <PlatformAdmin /> : <Navigate to="/" replace />} />
       <Route path="/" element={<TournamentSetup />} />
       <Route path="/t/:tournamentId/*" element={<Shell />} />
       <Route path="*" element={<Navigate to={user ? "/" : "/login"} replace />} />
