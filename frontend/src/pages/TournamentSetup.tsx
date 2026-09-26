@@ -41,9 +41,21 @@ export default function TournamentSetup() {
     navigate(`/t/${id}/courts`);
   };
 
+  const openTournament = (id: string) => {
+    navigate(`/t/${id}/courts`);
+  };
+
   const removeTournament = async (id: string) => {
     if (!window.confirm("Remove this tournament and all of its tournament data? This cannot be undone.")) return;
     await api.delete(`/tournaments/${id}`);
+    load();
+  };
+
+  const removePreviousTournaments = async () => {
+    const previousCount = tournaments.filter((tournament) => tournament.ownerId === user?.id && tournament.status === "COMPLETED").length;
+    if (previousCount === 0) return;
+    if (!window.confirm(`Delete all ${previousCount} completed open play${previousCount === 1 ? "" : "s"} and their data? This cannot be undone.`)) return;
+    await api.delete("/tournaments/previous");
     load();
   };
 
@@ -133,11 +145,12 @@ export default function TournamentSetup() {
         </section>
 
         <aside className="glass-panel p-6">
-          <div className="mb-4 flex items-center justify-between">
+          <div className="mb-4 flex items-center justify-between gap-3">
             <h2 className="font-display text-2xl font-bold text-white">Recent</h2>
-            <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-white/45">
-              {tournaments.length} active
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-white/45">{tournaments.length} total</span>
+              {tournaments.some((tournament) => tournament.ownerId === user?.id && tournament.status === "COMPLETED") && <button type="button" onClick={removePreviousTournaments} className="rounded-lg border border-red-400/30 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-300 hover:bg-red-400/10">Clear previous</button>}
+            </div>
           </div>
 
           {tournaments.length > 0 ? (
@@ -145,9 +158,13 @@ export default function TournamentSetup() {
               {tournaments.map((t) => (
                 <div
                   key={t.id}
-                  className="w-full rounded-2xl border border-white/10 bg-white/[0.02] p-3 text-left transition hover:border-ball/30 hover:bg-ball/[0.04]"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => openTournament(t.id)}
+                  onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") openTournament(t.id); }}
+                  className="w-full cursor-pointer rounded-2xl border border-white/10 bg-white/[0.02] p-3 text-left transition hover:border-ball/30 hover:bg-ball/[0.04]"
                 >
-                  <div className="flex items-center justify-between gap-3"><button type="button" onClick={() => navigate(`/t/${t.id}/${user?.role === "ADMIN" || user?.role === "SUPERADMIN" ? "courts" : "kiosk"}`)} className="font-medium text-white hover:text-ball">{t.name}</button>
+                  <div className="flex items-center justify-between gap-3"><button type="button" onClick={(event) => { event.stopPropagation(); openTournament(t.id); }} className="font-medium text-white hover:text-ball">{t.name}</button>
                     <span className="rounded-full border border-white/10 bg-white/[0.04] px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-white/55">
                       {t.type === "RANDOM_PAIRING" ? "Random" : "Bracket"}
                     </span>
@@ -155,7 +172,7 @@ export default function TournamentSetup() {
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-white/45">
                     <span>{t.status === "COMPLETED" ? "FINISHED" : t.status}</span>
                     <div className="flex gap-1">
-                      {(user?.role === "ADMIN" || user?.role === "SUPERADMIN") && <button type="button" onClick={() => navigate(`/t/${t.id}/courts`)} className="rounded-lg border border-ball/30 px-2 py-1 text-ball">Resume</button>}
+                      {(user?.role === "ADMIN" || user?.role === "SUPERADMIN") && <button type="button" onClick={(event) => { event.stopPropagation(); openTournament(t.id); }} className="rounded-lg border border-ball/30 px-2 py-1 text-ball">Resume</button>}
                       {t.status !== "COMPLETED" && (user?.role === "SUPERADMIN" || (user?.role === "ADMIN" && t.ownerId === user.id)) && <button type="button" onClick={(event) => { event.stopPropagation(); finishTournament(t.id); }} className="rounded-lg border border-emerald-400/30 px-2 py-1 text-emerald-300">Open finalizer</button>}
                       {t.status === "COMPLETED" && (user?.role === "SUPERADMIN" || (user?.role === "ADMIN" && t.ownerId === user.id)) && <button type="button" onClick={(event) => { event.stopPropagation(); downloadSummary(t.id, t.name); }} className="rounded-lg border border-ball/30 px-2 py-1 text-ball">Download summary</button>}
                       {(user?.role === "SUPERADMIN" || (user?.role === "ADMIN" && t.ownerId === user.id)) && <button type="button" onClick={(event) => { event.stopPropagation(); removeTournament(t.id); }} className="rounded-lg border border-red-400/30 px-2 py-1 text-red-300">Remove</button>}
@@ -215,10 +232,17 @@ function PlayerTournamentDirectory({
         </header>
         <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {tournaments.map((tournament) => (
-            <article key={tournament.id} className="glass-panel p-5">
+            <article
+              key={tournament.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => onOpen(tournament.id)}
+              onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onOpen(tournament.id); }}
+              className="glass-panel cursor-pointer p-5"
+            >
               <div className="flex items-start justify-between gap-3"><h2 className="font-display text-2xl font-bold text-white">{tournament.name}</h2><span className="text-[10px] uppercase tracking-widest text-white/45">{tournament.status}</span></div>
               <p className="mt-2 text-sm text-white/50">{tournament.type === "RANDOM_PAIRING" ? "Random pairing" : "Fixed bracket"}</p>
-              <div className="mt-5 flex gap-2"><button onClick={() => onOpen(tournament.id)} className="secondary-button flex-1">{tournament.myMembership?.joinStatus === "APPROVED" ? "Resume tournament" : "Spectate tournament"}</button>{canJoin && <button onClick={() => join(tournament.id)} disabled={displayName.trim().length < 2 || joined[tournament.id] || pending[tournament.id] || (tournament.myMembership !== undefined && tournament.myMembership !== null)} className="action-button flex-1">{tournament.myMembership?.joinStatus === "APPROVED" ? "Joined" : tournament.myMembership?.joinStatus === "PENDING" || joined[tournament.id] ? "Awaiting approval" : tournament.myMembership?.joinStatus === "REJECTED" ? "Rejected" : pending[tournament.id] ? "Sending..." : "Request entry"}</button>}</div>
+              <div className="mt-5 flex gap-2"><button onClick={(event) => { event.stopPropagation(); onOpen(tournament.id); }} className="secondary-button flex-1">{tournament.myMembership?.joinStatus === "APPROVED" ? "Resume tournament" : "Spectate tournament"}</button>{canJoin && <button onClick={(event) => { event.stopPropagation(); void join(tournament.id); }} disabled={displayName.trim().length < 2 || joined[tournament.id] || pending[tournament.id] || (tournament.myMembership !== undefined && tournament.myMembership !== null)} className="action-button flex-1">{tournament.myMembership?.joinStatus === "APPROVED" ? "Joined" : tournament.myMembership?.joinStatus === "PENDING" || joined[tournament.id] ? "Awaiting approval" : tournament.myMembership?.joinStatus === "REJECTED" ? "Rejected" : pending[tournament.id] ? "Sending..." : "Request entry"}</button>}</div>
             </article>
           ))}
         </section>

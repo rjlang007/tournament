@@ -311,7 +311,9 @@ export default function CourtControl() {
       ? new Date(tournament.scheduledEnd)
       : new Date();
     const newEndTime = new Date(base.getTime() + minutes * 60000).toISOString();
-    await api.post(`/tournaments/${tournamentId}/extend`, { newEndTime });
+    const continueOpenPlay = !!tournament?.resultsFinalizedAt;
+    if (continueOpenPlay && !window.confirm("This open play was finalized. Continue it and replace the official final standings with new results?")) return;
+    await api.post(`/tournaments/${tournamentId}/extend`, { newEndTime, continueOpenPlay });
     load();
   };
 
@@ -424,8 +426,8 @@ export default function CourtControl() {
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <button onClick={openSchedule} className="secondary-button flex-1 px-3 py-1.5 text-sm sm:flex-none">Set schedule</button>
-          <button onClick={() => extend(30)} className="secondary-button flex-1 px-3 py-1.5 text-sm sm:flex-none">+30 min</button>
-          <button onClick={() => extend(60)} className="secondary-button flex-1 px-3 py-1.5 text-sm sm:flex-none">+1 hr</button>
+          <button onClick={() => extend(30)} className="secondary-button flex-1 px-3 py-1.5 text-sm sm:flex-none">{tournament?.resultsFinalizedAt ? "Continue +30 min" : "+30 min"}</button>
+          <button onClick={() => extend(60)} className="secondary-button flex-1 px-3 py-1.5 text-sm sm:flex-none">{tournament?.resultsFinalizedAt ? "Continue +1 hr" : "+1 hr"}</button>
           <button onClick={emergencyPause} className="secondary-button flex-1 px-3 py-1.5 text-sm sm:flex-none">Emergency pause</button>
           <button onClick={emergencyResume} className="secondary-button flex-1 px-3 py-1.5 text-sm sm:flex-none">Resume courts</button>
           <button onClick={recoverTournament} disabled={recoveryBusy} className="secondary-button flex-1 px-3 py-1.5 text-sm sm:flex-none">{recoveryBusy ? "Repairing..." : "Repair states"}</button>

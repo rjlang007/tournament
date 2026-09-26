@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { computeLeaderboard, countUnfinishedGames, detectPodiumTies, LeaderboardRow } from "../lib/leaderboard";
 import { broadcastTournamentUpdate } from "../socket";
@@ -155,6 +156,14 @@ tournamentsRouter.post("/:id/complete", async (req: AuthedRequest, res) => {
   res.json(tournament);
 });
 
+tournamentsRouter.delete("/previous", async (req: AuthedRequest, res) => {
+  if (!req.userId) return res.status(401).json({ error: "Not signed in." });
+  const deleted = await prisma.tournament.deleteMany({
+    where: { ownerId: req.userId, status: "COMPLETED" },
+  });
+  res.json({ deleted: deleted.count });
+});
+
 tournamentsRouter.delete("/:id", async (req: AuthedRequest, res) => {
   if (!(await canManageTournament(req, req.params.id))) return res.status(403).json({ error: "You can only remove tournaments you own." });
   const tournament = await prisma.tournament.delete({ where: { id: req.params.id } });
@@ -237,18 +246,28 @@ tournamentsRouter.patch("/:id/schedule", async (req: AuthedRequest, res) => {
 // as ACTIVE so games can keep being recorded.
 tournamentsRouter.post("/:id/extend", async (req: AuthedRequest, res) => {
   if (!(await canManageTournament(req, req.params.id))) return res.status(403).json({ error: "You can only edit tournaments you own." });
-  const { newEndTime } = req.body as { newEndTime?: string };
+  const { newEndTime, continueOpenPlay } = req.body as { newEndTime?: string; continueOpenPlay?: boolean };
   if (!newEndTime) return res.status(400).json({ error: "newEndTime is required" });
   const endDate = new Date(newEndTime);
   if (Number.isNaN(endDate.getTime())) return res.status(400).json({ error: "newEndTime must be a valid date." });
+  const current = await prisma.tournament.findUnique({ where: { id: req.params.id }, select: { resultsFinalizedAt: true } });
+  if (!current) return res.status(404).json({ error: "Tournament not found." });
+  if (current.resultsFinalizedAt && continueOpenPlay !== true) {
+    return res.status(409).json({ error: "Explicit confirmation is required to continue a finalized open play." });
+  }
+  const reopeningFinalized = !!current.resultsFinalizedAt;
   const tournament = await prisma.tournament.update({
     where: { id: req.params.id },
     data: {
       scheduledEnd: endDate,
       resultsFinalizedAt: null,
+      finalStandings: reopeningFinalized ? Prisma.JsonNull : undefined,
       status: "ACTIVE",
     },
   });
+  if (reopeningFinalized) {
+    await recordAudit(prisma, { tournamentId: tournament.id, actorId: req.userId, action: "TOURNAMENT_REOPENED", entityType: "Tournament", entityId: tournament.id, details: { newEndTime: endDate.toISOString() } });
+  }
   broadcastTournamentUpdate(tournament.id, "tournament:changed");
   res.json(tournament);
 });

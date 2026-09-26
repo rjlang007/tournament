@@ -87,6 +87,7 @@ async function requireAdminForWrites(req: AuthedRequest, res: express.Response, 
   let tournamentId: string | undefined;
   if (req.baseUrl === "/api/tournaments") {
     if (req.method === "POST" && pathSegments.length === 0) return next();
+    if (req.method === "DELETE" && pathSegments[0] === "previous") return next();
     tournamentId = pathSegments[0];
   } else if (req.baseUrl === "/api/players") {
     tournamentId = req.body?.tournamentId || req.query.tournamentId as string | undefined;

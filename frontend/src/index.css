@@ -179,13 +179,20 @@
   .podium-rank { @apply relative z-10 text-[10px] font-bold tracking-[0.2em]; }
 
   @media print {
+    @page {
+      size: landscape;
+      margin: 12mm;
+    }
+
     body {
       background: #ffffff !important;
     }
 
     .leaderboard-page {
       max-width: none;
+      width: 100%;
       color: #111827;
+      font-size: 11px;
     }
 
     .leaderboard-page .leaderboard-actions,
@@ -205,6 +212,60 @@
     }
 
     .leaderboard-page .podium-stage { display: block; }
+    .leaderboard-page > header {
+      align-items: center;
+      border-bottom: 2px solid #111827;
+      margin-bottom: 12px;
+      padding-bottom: 8px;
+    }
+
+    .leaderboard-page > .grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .leaderboard-page > .grid > .glass-panel {
+      min-height: 0;
+      padding: 10px 12px;
+    }
+
+    .leaderboard-page .podium-stage {
+      margin-bottom: 12px;
+      padding: 12px;
+    }
+
+    .leaderboard-page .podium-stage h3 {
+      font-size: 20px;
+    }
+
+    .leaderboard-page .podium-grid {
+      gap: 8px;
+    }
+
+    .leaderboard-page .podium-card {
+      min-height: 0;
+      padding: 10px 12px;
+    }
+
+    .leaderboard-page .podium-card h4 {
+      margin-top: 8px;
+      font-size: 18px;
+    }
+
+    .leaderboard-page .podium-card .text-3xl {
+      font-size: 22px;
+    }
+
+    .leaderboard-page table {
+      font-size: 10px;
+    }
+
+    .leaderboard-page th,
+    .leaderboard-page td {
+      padding: 6px 8px;
+    }
+
     .leaderboard-page .podium-card,
     .leaderboard-page .podium-card *,
     .leaderboard-page .glass-panel,
