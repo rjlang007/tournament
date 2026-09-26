@@ -59,6 +59,17 @@ export default function TournamentSetup() {
     load();
   };
 
+  const removeAllTournaments = async () => {
+    const removableCount = user?.role === "SUPERADMIN"
+      ? tournaments.length
+      : tournaments.filter((tournament) => tournament.ownerId === user?.id).length;
+    if (removableCount === 0) return;
+    const scope = user?.role === "SUPERADMIN" ? "all tournaments" : "your tournaments";
+    if (!window.confirm(`Delete ${removableCount} ${scope} and all associated data? This cannot be undone.`)) return;
+    await api.delete("/tournaments");
+    load();
+  };
+
   const downloadSummary = async (id: string, tournamentName: string) => {
     const response = await api.get(`/tournaments/${id}/summary.csv`, { responseType: "blob" });
     const url = URL.createObjectURL(response.data);
@@ -80,7 +91,7 @@ export default function TournamentSetup() {
               <div className="text-[10px] uppercase tracking-[0.28em] text-ball/80">Your court, in motion</div>
               <h1 className="brand-lockup mt-2 font-display text-4xl font-bold tracking-tight text-ball sm:text-5xl">Falcon Flick Zone</h1>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
               {(user?.role === "ADMIN" || user?.role === "SUPERADMIN") && <Link to="/platform" className="secondary-button px-3 py-2 text-xs">Accounts</Link>}
               <Link to="/" aria-label="Go to tournament dashboard" className="flex h-12 w-12 items-center justify-center rounded-2xl bg-ball/20 text-2xl ring-1 ring-ball/20">🏓</Link>
             </div>
@@ -149,6 +160,7 @@ export default function TournamentSetup() {
             <h2 className="font-display text-2xl font-bold text-white">Recent</h2>
             <div className="flex items-center gap-2">
               <span className="rounded-full border border-white/10 bg-white/[0.03] px-2.5 py-1 text-[10px] uppercase tracking-[0.2em] text-white/45">{tournaments.length} total</span>
+              {(user?.role === "ADMIN" || user?.role === "SUPERADMIN") && (user.role === "SUPERADMIN" ? tournaments.length > 0 : tournaments.some((tournament) => tournament.ownerId === user.id)) && <button type="button" onClick={removeAllTournaments} className="rounded-lg border border-red-400/30 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-300 hover:bg-red-400/10">{user.role === "SUPERADMIN" ? "Clear all" : "Clear mine"}</button>}
               {tournaments.some((tournament) => tournament.ownerId === user?.id && tournament.status === "COMPLETED") && <button type="button" onClick={removePreviousTournaments} className="rounded-lg border border-red-400/30 px-2.5 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-red-300 hover:bg-red-400/10">Clear previous</button>}
             </div>
           </div>

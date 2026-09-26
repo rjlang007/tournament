@@ -164,6 +164,17 @@ tournamentsRouter.delete("/previous", async (req: AuthedRequest, res) => {
   res.json({ deleted: deleted.count });
 });
 
+tournamentsRouter.delete("/", async (req: AuthedRequest, res) => {
+  if (!req.userId || !req.userRole || !["ADMIN", "SUPERADMIN"].includes(req.userRole)) {
+    return res.status(403).json({ error: "Administrator access is required." });
+  }
+  const where = req.userRole === "SUPERADMIN" ? {} : { ownerId: req.userId };
+  const tournaments = await prisma.tournament.findMany({ where, select: { id: true } });
+  const deleted = await prisma.tournament.deleteMany({ where: { ...where, id: { in: tournaments.map(({ id }) => id) } } });
+  for (const { id } of tournaments) broadcastTournamentUpdate(id, "tournament:deleted");
+  res.json({ deleted: deleted.count });
+});
+
 tournamentsRouter.delete("/:id", async (req: AuthedRequest, res) => {
   if (!(await canManageTournament(req, req.params.id))) return res.status(403).json({ error: "You can only remove tournaments you own." });
   const tournament = await prisma.tournament.delete({ where: { id: req.params.id } });
