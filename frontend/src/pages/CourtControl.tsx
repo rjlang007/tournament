@@ -4,6 +4,8 @@ import { api, Court, FinalizeCheck, Game, Player, Tournament, TieGroup } from ".
 import { useTournamentSocket } from "../lib/socket";
 import SpinWheel from "../components/SpinWheel";
 
+const ALLOWED_WINNING_SCORES = [11, 15, 21];
+
 function fmt(seconds: number) {
   const m = Math.floor(seconds / 60).toString().padStart(2, "0");
   const s = Math.floor(seconds % 60).toString().padStart(2, "0");
@@ -207,6 +209,11 @@ export default function CourtControl() {
     }
     if ((winningTeam === "A" && finalScoreA < finalScoreB) || (winningTeam === "B" && finalScoreB < finalScoreA)) {
       window.alert("The winning team must have the higher score.");
+      return;
+    }
+    const winningScore = winningTeam === "A" ? finalScoreA : finalScoreB;
+    if (!ALLOWED_WINNING_SCORES.includes(winningScore)) {
+      window.alert("The winning score must be exactly 11, 15, or 21.");
       return;
     }
     if (finishingGame.status === "FINISHED") {
@@ -598,9 +605,10 @@ export default function CourtControl() {
             <h3 id="result-title" className="font-display text-lg font-bold mb-1">{finishingGame.status === "FINISHED" ? "Correct game result" : "Who won?"}</h3>
             <p className="text-xs text-white/40 mb-4">Enter both final scores. The team with the higher score must be selected as the winner.</p>
             <div className="grid grid-cols-2 gap-3 mb-4">
-              <label className="text-xs text-white/50">Team A score<input required type="number" min="0" value={scoreA} onChange={(event) => setScoreA(event.target.value)} className="field mt-1" /></label>
-              <label className="text-xs text-white/50">Team B score<input required type="number" min="0" value={scoreB} onChange={(event) => setScoreB(event.target.value)} className="field mt-1" /></label>
+              <label className="text-xs text-white/50">Team A score<input required type="number" min="0" list="allowed-winning-scores" placeholder="11, 15, or 21" value={scoreA} onChange={(event) => setScoreA(event.target.value)} className="field mt-1" /></label>
+              <label className="text-xs text-white/50">Team B score<input required type="number" min="0" list="allowed-winning-scores" placeholder="11, 15, or 21" value={scoreB} onChange={(event) => setScoreB(event.target.value)} className="field mt-1" /></label>
             </div>
+            <datalist id="allowed-winning-scores">{ALLOWED_WINNING_SCORES.map((score) => <option key={score} value={score} />)}</datalist>
             {finishingGame.status === "FINISHED" && <label className="mb-4 block text-xs text-white/50">Correction reason<textarea value={resultReason} onChange={(event) => setResultReason(event.target.value)} placeholder="Explain the score or winner correction" className="field mt-1 min-h-20" maxLength={500} /></label>}
             <div className="grid grid-cols-2 gap-3 mb-3">
               <button

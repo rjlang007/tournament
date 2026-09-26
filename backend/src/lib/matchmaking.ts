@@ -25,9 +25,25 @@ export function isEligiblePair(a: SkillLevel, b: SkillLevel): boolean {
 
 type TeamSkillPair = readonly [SkillLevel, SkillLevel];
 
-/** Any two valid teams may play; numeric team balance decides which matchup is preferred. */
+/**
+ * Only the approved team-composition matchups may play. The one cross-composition
+ * pairing keeps BEGINNER+ADVANCE balanced against AVERAGE+AVERAGE.
+ */
 export function isEligibleTeamMatchup(teamA: TeamSkillPair, teamB: TeamSkillPair): boolean {
-  return teamA.length === 2 && teamB.length === 2;
+  if (teamA.length !== 2 || teamB.length !== 2) return false;
+  const teamKey = (team: TeamSkillPair) => [...team].sort().join("+");
+  const keyA = teamKey(teamA);
+  const keyB = teamKey(teamB);
+  const allowedMatchups = new Set([
+    "BEGINNER+BEGINNER|BEGINNER+BEGINNER",
+    "ADVANCE+BEGINNER|ADVANCE+BEGINNER",
+    "ADVANCE+BEGINNER|AVERAGE+AVERAGE",
+    "AVERAGE+AVERAGE|AVERAGE+AVERAGE",
+    "AVERAGE+BEGINNER|AVERAGE+BEGINNER",
+    "ADVANCE+AVERAGE|ADVANCE+AVERAGE",
+    "ADVANCE+ADVANCE|ADVANCE+ADVANCE",
+  ]);
+  return allowedMatchups.has([keyA, keyB].sort().join("|"));
 }
 
 /** Numeric skill score used only to compare overall TEAM strength (not for pairing eligibility). */

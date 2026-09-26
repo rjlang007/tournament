@@ -106,24 +106,30 @@ export default function Leaderboard() {
 
   const isFinal = !!final?.finalized;
   const rows = isFinal && final?.standings ? final.standings : liveRows;
+  const podiumRows = rows.slice(0, 3);
   const totalGames = rows.reduce((sum, row) => sum + row.gamesPlayed, 0);
   const leader = rows[0];
   const topWinRate = rows.reduce((best, row) => (row.winPct > best.winPct ? row : best), rows[0] ?? { winPct: 0, name: "—" } as LeaderboardRow);
+  const exportName = final?.tournamentName ?? "Falcon Flick Zone";
 
   return (
-    <div className="mx-auto max-w-5xl space-y-6">
+    <div className="leaderboard-page mx-auto max-w-5xl space-y-6">
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="text-[10px] uppercase tracking-[0.25em] text-white/45">Results</div>
           <h2 className="mt-2 font-display text-3xl font-bold text-white">{isFinal ? "Final Standings" : "Leaderboard"}</h2>
         </div>
-        {isFinal && final?.finalizedAt && (
-          <div className="rounded-full border border-red-400/20 bg-red-500/10 px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-red-300">
-            Recorded {new Date(final.finalizedAt).toLocaleString(undefined, {
-              month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
-            })}
-          </div>
-        )}
+        <div className="leaderboard-actions flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => window.print()} className="secondary-button px-3 py-2 text-xs">Print standings</button>
+          <button type="button" onClick={() => downloadResultsImage(exportName, rows, "png")} disabled={rows.length === 0} className="action-button px-3 py-2 text-xs">Save PNG</button>
+          {isFinal && final?.finalizedAt && (
+            <div className="rounded-full border border-red-400/20 bg-red-500/10 px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-red-300">
+              Recorded {new Date(final.finalizedAt).toLocaleString(undefined, {
+                month: "short", day: "numeric", hour: "numeric", minute: "2-digit",
+              })}
+            </div>
+          )}
+        </div>
       </header>
 
       {error && <div className="error-panel flex flex-wrap items-center justify-between gap-3">{error}<button type="button" onClick={load} className="secondary-button px-3 py-1.5 text-xs">Retry</button></div>}
@@ -131,22 +137,47 @@ export default function Leaderboard() {
       {loading ? <LeaderboardSkeleton /> : <>
 
       {isFinal && final?.standings && (
-        <section className="overflow-hidden rounded-3xl border border-ball/30 bg-gradient-to-br from-ball/20 via-white/5 to-emerald-500/10 p-6 shadow-2xl shadow-ball/10 sm:p-8">
+        <section className="final-results-banner overflow-hidden rounded-3xl border border-ball/30 bg-gradient-to-br from-ball/20 via-white/5 to-emerald-500/10 p-6 shadow-2xl shadow-ball/10 sm:p-8">
           <div className="max-w-3xl">
             <div className="text-xs font-bold uppercase tracking-[0.28em] text-ball">Official tournament results</div>
             <h1 className="mt-3 font-display text-4xl font-bold text-white sm:text-5xl">Congratulations to {leader?.name ?? "our players"}!</h1>
             <p className="mt-3 text-base leading-7 text-white/70">The tournament is complete. Here are the final rankings, including every player who competed.</p>
-            <div className="mt-6 flex flex-wrap gap-2">
-              <button type="button" onClick={() => downloadResultsImage(final.tournamentName, final.standings!, "png")} className="rounded-xl bg-ball px-4 py-2.5 text-sm font-bold text-neutral-950">
-                Download PNG
-              </button>
-              <button type="button" onClick={() => downloadResultsImage(final.tournamentName, final.standings!, "jpeg")} className="rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-sm font-semibold text-white">
-                Download JPEG
-              </button>
-            </div>
           </div>
         </section>
       )}
+
+      {podiumRows.length > 0 && <section className="podium-stage" aria-label="Top three standings">
+        <div className="mb-5 flex items-end justify-between gap-3">
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.28em] text-ball">The podium</div>
+            <h3 className="mt-2 font-display text-3xl font-bold text-white">Standout players</h3>
+          </div>
+          <div className="hidden text-right text-xs text-white/45 sm:block">Overall performance</div>
+        </div>
+        <div className="podium-grid">
+          {podiumRows.map((row, index) => {
+            const rank = index + 1;
+            const medal = rank === 1 ? "🏆" : rank === 2 ? "🥈" : "🥉";
+            return <article key={row.playerId} className={`podium-card podium-rank-${rank}`}>
+              <div className="flex items-start justify-between gap-3">
+                <span className="podium-medal" aria-hidden="true">{medal}</span>
+                <span className="podium-rank">{rank === 1 ? "CHAMPION" : `${rank}${rank === 2 ? "ND" : "RD"}`}</span>
+              </div>
+              <h4 className="mt-5 truncate font-display text-2xl font-bold text-white">{row.name}</h4>
+              <div className="mt-3 flex items-end justify-between gap-3">
+                <div>
+                  <div className="font-display text-3xl font-bold text-white">{row.wins}</div>
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-white/45">Wins</div>
+                </div>
+                <div className="text-right">
+                  <div className="text-lg font-bold text-white">{row.winPct}%</div>
+                  <div className="text-[10px] uppercase tracking-[0.18em] text-white/45">Win rate</div>
+                </div>
+              </div>
+            </article>;
+          })}
+        </div>
+      </section>}
 
       <div className="grid gap-4 md:grid-cols-3">
         <div className="glass-panel p-4">

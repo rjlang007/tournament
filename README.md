@@ -1,4 +1,4 @@
-# Dink Board — Pickleball Tournament System (Simplified)
+# Falcon Flick Zone — Pickleball Tournament System
 
 A focused tournament management system for a single venue, with administrator
 accounts, player accounts, community features, live matchmaking, and results.

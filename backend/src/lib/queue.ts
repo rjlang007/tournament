@@ -7,10 +7,10 @@ type DatabaseClient = typeof prisma | Prisma.TransactionClient;
 
 const UPCOMING_PREVIEW_SIZE = 6; // "4-6 waiting games" shown on kiosk
 
-async function withTournamentLock<T>(tournamentId: string, work: () => Promise<T>): Promise<T> {
+async function withTournamentLock<T>(tournamentId: string, work: (db: Prisma.TransactionClient) => Promise<T>): Promise<T> {
   return prisma.$transaction(async (tx) => {
     await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${tournamentId}))`;
-    return work();
+    return work(tx);
   }, { maxWait: 10_000, timeout: 30_000 });
 }
 
@@ -26,20 +26,20 @@ async function withTournamentLock<T>(tournamentId: string, work: () => Promise<T
  * Leftover players who can't be matched (e.g. all remaining are Advance
  * with no Beginners left) stay in the queue untouched for the next refill.
  */
-async function refillUpcomingQueueUnlocked(tournamentId: string, minPreview = 4, maxPreview?: number) {
+async function refillUpcomingQueueUnlocked(tournamentId: string, minPreview = 4, maxPreview?: number, db: DatabaseClient = prisma) {
   // Always draw enough games to seat every enabled court plus a small
   // preview buffer, so a draw never leaves courts empty just because the
   // default preview size (6) was smaller than the number of courts.
-  const enabledCourts = await prisma.court.count({ where: { tournamentId, isEnabled: true } });
+  const enabledCourts = await db.court.count({ where: { tournamentId, isEnabled: true } });
   const effectiveMaxPreview = maxPreview ?? Math.max(UPCOMING_PREVIEW_SIZE, enabledCourts + 2);
 
-  const existingUpcoming = await prisma.game.count({
+  const existingUpcoming = await db.game.count({
     where: { tournamentId, status: "UPCOMING" },
   });
   const slotsToFill = Math.max(0, effectiveMaxPreview - existingUpcoming);
   if (slotsToFill === 0) return { created: 0 };
 
-  const tournament = await prisma.tournament.findUnique({
+  const tournament = await db.tournament.findUnique({
     where: { id: tournamentId },
     select: { type: true, scheduledEnd: true },
   });
@@ -49,7 +49,7 @@ async function refillUpcomingQueueUnlocked(tournamentId: string, minPreview = 4,
   }
   const finalPhase = !!tournament?.scheduledEnd && tournament.scheduledEnd.getTime() - Date.now() <= 45 * 60 * 1000;
 
-  const queueEntries = await prisma.queueEntry.findMany({
+  const queueEntries = await db.queueEntry.findMany({
     where: { tournamentId },
     include: {
       player: {
@@ -64,7 +64,7 @@ async function refillUpcomingQueueUnlocked(tournamentId: string, minPreview = 4,
     orderBy: { enqueuedAt: "asc" },
   });
 
-  const finishedGames = await prisma.game.findMany({
+  const finishedGames = await db.game.findMany({
     where: { tournamentId, status: { not: "CANCELLED" } },
     select: { players: { select: { playerId: true, team: true } } },
   });
@@ -130,7 +130,7 @@ async function refillUpcomingQueueUnlocked(tournamentId: string, minPreview = 4,
 
   let created = 0;
   for (const g of games) {
-    const nextGame = await prisma.game.create({
+    const nextGame = await db.game.create({
       data: {
         tournamentId,
         status: "UPCOMING",
@@ -146,11 +146,11 @@ async function refillUpcomingQueueUnlocked(tournamentId: string, minPreview = 4,
     });
 
     const playerIds = [...g.teamA, ...g.teamB].map((p) => p.id);
-    await prisma.player.updateMany({
+    await db.player.updateMany({
       where: { id: { in: playerIds } },
       data: { status: "QUEUED" },
     });
-    await prisma.queueEntry.deleteMany({ where: { playerId: { in: playerIds } } });
+    await db.queueEntry.deleteMany({ where: { tournamentId, playerId: { in: playerIds } } });
     created++;
     void nextGame;
   }
@@ -159,7 +159,7 @@ async function refillUpcomingQueueUnlocked(tournamentId: string, minPreview = 4,
 }
 
 export function refillUpcomingQueue(tournamentId: string, minPreview = 4, maxPreview?: number) {
-  return withTournamentLock(tournamentId, () => refillUpcomingQueueUnlocked(tournamentId, minPreview, maxPreview));
+  return withTournamentLock(tournamentId, (db) => refillUpcomingQueueUnlocked(tournamentId, minPreview, maxPreview, db));
 }
 
 /** Assigns the oldest UPCOMING game to a free, enabled court and marks it READY. */

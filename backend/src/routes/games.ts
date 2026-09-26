@@ -14,8 +14,12 @@ const gameInclude = {
   court: true,
 };
 
+const ALLOWED_WINNING_SCORES = new Set([11, 15, 21]);
+
 function validateResult(winningTeam: unknown, scoreA: unknown, scoreB: unknown): winningTeam is "A" | "B" {
   if ((winningTeam !== "A" && winningTeam !== "B") || typeof scoreA !== "number" || typeof scoreB !== "number" || !Number.isInteger(scoreA) || !Number.isInteger(scoreB) || scoreA < 0 || scoreB < 0 || scoreA > 99 || scoreB > 99 || scoreA === scoreB) return false;
+  const winningScore = winningTeam === "A" ? scoreA : scoreB;
+  if (!ALLOWED_WINNING_SCORES.has(winningScore)) return false;
   return winningTeam === "A" ? scoreA > scoreB : scoreB > scoreA;
 }
 
@@ -173,7 +177,7 @@ gamesRouter.post("/:id/finish", async (req, res) => {
   };
 
   if (!validateResult(winningTeam, scoreA, scoreB)) {
-    return res.status(400).json({ error: "A winning team and final, non-tied scores from 0 to 99 are required." });
+    return res.status(400).json({ error: "The winning score must be exactly 11, 15, or 21, and higher than the losing score." });
   }
   if (typeof scoreA !== "number" || typeof scoreB !== "number" || !winningTeam) return res.status(400).json({ error: "Invalid result." });
   if ((winningTeam === "A" && scoreA < scoreB) || (winningTeam === "B" && scoreB < scoreA)) {
@@ -243,7 +247,7 @@ gamesRouter.post("/:id/finish", async (req, res) => {
 
 gamesRouter.patch("/:id/result", async (req: AuthedRequest, res) => {
   const { winningTeam, scoreA, scoreB, reason } = req.body as { winningTeam?: "A" | "B"; scoreA?: number; scoreB?: number; reason?: string };
-  if (!validateResult(winningTeam, scoreA, scoreB)) return res.status(400).json({ error: "A winning team and final, non-tied scores from 0 to 99 are required." });
+  if (!validateResult(winningTeam, scoreA, scoreB)) return res.status(400).json({ error: "The winning score must be exactly 11, 15, or 21, and higher than the losing score." });
   if (reason !== undefined && (typeof reason !== "string" || reason.trim().length < 3 || reason.length > 500)) return res.status(400).json({ error: "A correction reason of 3 to 500 characters is required." });
 
   const current = await prisma.game.findUnique({ where: { id: req.params.id }, select: { tournamentId: true, status: true, winningTeam: true, scoreA: true, scoreB: true } });

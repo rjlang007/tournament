@@ -6,21 +6,36 @@ const beginner = "BEGINNER" as const;
 const average = "AVERAGE" as const;
 const advance = "ADVANCE" as const;
 
-test("allows mixed-skill teammates and opponents", () => {
+test("allows only the approved team matchups", () => {
   const allowed = [
     [[beginner, beginner], [beginner, beginner]],
     [[advance, beginner], [advance, beginner]],
     [[advance, beginner], [average, average]],
-    [[advance, advance], [beginner, beginner]],
     [[average, average], [average, average]],
     [[average, beginner], [average, beginner]],
     [[advance, average], [advance, average]],
+    [[advance, advance], [advance, advance]],
   ] as const;
 
   for (const [teamA, teamB] of allowed) {
     assert.equal(isEligiblePair(teamA[0], teamA[1]), true);
     assert.equal(isEligiblePair(teamB[0], teamB[1]), true);
     assert.equal(isEligibleTeamMatchup(teamA, teamB), true);
+  }
+});
+
+test("rejects unbalanced or unlisted team matchups", () => {
+  const rejected = [
+    [[beginner, beginner], [advance, beginner]],
+    [[beginner, beginner], [average, beginner]],
+    [[beginner, beginner], [advance, advance]],
+    [[advance, beginner], [advance, advance]],
+    [[average, average], [advance, average]],
+    [[average, beginner], [average, average]],
+  ] as const;
+
+  for (const [teamA, teamB] of rejected) {
+    assert.equal(isEligibleTeamMatchup(teamA, teamB), false);
   }
 });
 

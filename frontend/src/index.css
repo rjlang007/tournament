@@ -76,6 +76,24 @@
     border-color: rgba(242, 201, 76, 0.18);
   }
 
+  .brand-lockup {
+    position: relative;
+    width: fit-content;
+    text-shadow: 0 0 24px rgba(242, 201, 76, 0.14);
+  }
+
+  .brand-lockup::after {
+    position: absolute;
+    right: 0;
+    bottom: -5px;
+    left: 0;
+    height: 2px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, var(--ball), var(--green));
+    content: "";
+    opacity: 0.75;
+  }
+
   .field {
     @apply w-full rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2.5 text-sm text-white placeholder:text-white/35 focus:border-ball/60 focus:outline-none focus:ring-2 focus:ring-ball/10;
   }
@@ -120,6 +138,73 @@
 
   .error-panel {
     @apply rounded-2xl border border-red-300/20 bg-red-400/10 p-4 text-sm text-red-200;
+  }
+
+  .podium-stage {
+    @apply overflow-hidden rounded-3xl border border-white/10 p-5 shadow-[0_20px_70px_rgba(0,0,0,0.22)] sm:p-7;
+    background: linear-gradient(135deg, rgba(242, 201, 76, 0.12), rgba(255, 255, 255, 0.03) 45%, rgba(30, 143, 107, 0.12));
+  }
+
+  .podium-grid {
+    display: grid;
+    align-items: end;
+    gap: 0.75rem;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .podium-card {
+    @apply relative overflow-hidden rounded-2xl border p-4 shadow-lg sm:p-5;
+    min-width: 0;
+    animation: card-rise 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .podium-card::after {
+    position: absolute;
+    right: -20%;
+    bottom: -45%;
+    width: 75%;
+    height: 75%;
+    border-radius: 999px;
+    background: currentColor;
+    content: "";
+    opacity: 0.08;
+    pointer-events: none;
+  }
+
+  .podium-rank-1 { @apply border-ball/50 bg-ball/15 text-ball; min-height: 230px; animation-delay: 80ms; }
+  .podium-rank-2 { @apply border-slate-300/30 bg-slate-300/10 text-slate-200; min-height: 200px; animation-delay: 0ms; }
+  .podium-rank-3 { @apply border-orange-300/30 bg-orange-300/10 text-orange-200; min-height: 180px; animation-delay: 160ms; }
+
+  .podium-medal { position: relative; z-index: 1; font-size: 1.75rem; line-height: 1; }
+  .podium-rank { @apply relative z-10 text-[10px] font-bold tracking-[0.2em]; }
+
+  @media print {
+    .leaderboard-page {
+      max-width: none;
+      color: #111827;
+    }
+
+    .leaderboard-page .leaderboard-actions,
+    .leaderboard-page .error-panel,
+    .leaderboard-page .final-results-banner,
+    .leaderboard-page > p,
+    .tournament-nav,
+    footer {
+      display: none !important;
+    }
+
+    .leaderboard-page .podium-stage,
+    .leaderboard-page .glass-panel {
+      border: 1px solid #d1d5db;
+      background: #ffffff;
+      box-shadow: none;
+    }
+
+    .leaderboard-page .podium-stage { display: block; }
+    .leaderboard-page .podium-card { color: #111827; }
+    .leaderboard-page table { color: #111827; }
+    .leaderboard-page th,
+    .leaderboard-page td { border-color: #d1d5db; }
   }
 
   .mobile-modal-shell {
