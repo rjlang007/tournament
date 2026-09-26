@@ -237,9 +237,14 @@ function PlayerTournamentDirectory({
     <div className="min-h-screen px-4 py-10 sm:px-6 lg:px-8">
       <div className="mx-auto max-w-6xl space-y-6">
         <header className="glass-panel p-6 sm:p-8">
-          <div className="text-[10px] uppercase tracking-[0.28em] text-ball/80">Recent tournaments</div>
-          <h1 className="mt-2 font-display text-4xl font-bold text-white">Spectate or join a tournament</h1>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">Every posted tournament is available to view. Resume a joined tournament or spectate its live courts, leaderboard, and bracket.</p>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="text-[10px] uppercase tracking-[0.28em] text-ball/80">Recent tournaments</div>
+              <h1 className="mt-2 font-display text-4xl font-bold text-white">Spectate or join a tournament</h1>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">Every posted tournament is available to view. Resume a joined tournament or spectate its live courts, leaderboard, and bracket.</p>
+            </div>
+            {!canJoin && <Link to="/login" className="action-button shrink-0 px-4 py-2.5">Admin sign in</Link>}
+          </div>
           {canJoin && <div className="mt-5 grid max-w-xl gap-4 sm:grid-cols-2"><div><label className="field-label">Name shown in tournament</label><input className="field" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Your full name" maxLength={80} required /></div><div><label className="field-label">Your skill level</label><select value={skillLevel} onChange={(event) => setSkillLevel(event.target.value as typeof skillLevel)} className="field"><option value="BEGINNER">Beginner</option><option value="AVERAGE">Average</option><option value="ADVANCE">Advanced</option></select></div></div>}
         </header>
         <section className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
@@ -258,7 +263,7 @@ function PlayerTournamentDirectory({
             </article>
           ))}
         </section>
-        {tournaments.length === 0 && <div className="glass-panel p-8 text-center text-sm text-white/50">No tournaments have been posted yet.</div>}
+        {tournaments.length === 0 && <div className="glass-panel p-8 text-center"><h2 className="font-display text-xl font-bold text-white">No tournaments posted yet</h2><p className="mt-2 text-sm text-white/50">Check back soon for upcoming games and events.</p></div>}
       </div>
     </div>
   );
