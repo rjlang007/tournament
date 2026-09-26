@@ -179,6 +179,10 @@
   .podium-rank { @apply relative z-10 text-[10px] font-bold tracking-[0.2em]; }
 
   @media print {
+    body {
+      background: #ffffff !important;
+    }
+
     .leaderboard-page {
       max-width: none;
       color: #111827;
@@ -201,7 +205,10 @@
     }
 
     .leaderboard-page .podium-stage { display: block; }
-    .leaderboard-page .podium-card { color: #111827; }
+    .leaderboard-page .podium-card,
+    .leaderboard-page .podium-card *,
+    .leaderboard-page .glass-panel,
+    .leaderboard-page .glass-panel * { color: #111827 !important; }
     .leaderboard-page table { color: #111827; }
     .leaderboard-page th,
     .leaderboard-page td { border-color: #d1d5db; }
