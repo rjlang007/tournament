@@ -110,7 +110,7 @@ export default function Leaderboard() {
   const totalGames = rows.reduce((sum, row) => sum + row.gamesPlayed, 0);
   const leader = rows[0];
   const topWinRate = rows.reduce((best, row) => (row.winPct > best.winPct ? row : best), rows[0] ?? { winPct: 0, name: "—" } as LeaderboardRow);
-  const exportName = final?.tournamentName ?? "Falcon Flick Zone";
+  const exportName = final?.tournamentName ?? "PADOL PICKLEBALL COURT";
 
   return (
     <div className="leaderboard-page mx-auto max-w-5xl space-y-6">

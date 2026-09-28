@@ -60,7 +60,7 @@ function Shell() {
               🏓
             </div>
             <div>
-              <div className="brand-lockup font-display text-xl font-bold tracking-wide text-ball">Falcon Flick Zone</div>
+              <div className="brand-lockup font-display text-xl font-bold tracking-wide text-ball">PADOL PICKLEBALL COURT</div>
               <div className="text-[10px] uppercase tracking-[0.24em] text-white/45">Court Operations</div>
             </div>
           </Link>

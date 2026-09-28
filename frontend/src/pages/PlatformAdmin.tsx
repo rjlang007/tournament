@@ -57,7 +57,7 @@ export default function PlatformAdmin() {
           <div className="flex items-center gap-3">
             <Link to="/" aria-label="Go to tournament dashboard" className="flex h-10 w-10 items-center justify-center rounded-xl bg-ball/20 text-xl shadow-inner shadow-ball/30 ring-1 ring-ball/30">🏓</Link>
             <div>
-              <div className="brand-lockup font-display text-xl font-bold tracking-wide text-ball">Falcon Flick Zone</div>
+              <div className="brand-lockup font-display text-xl font-bold tracking-wide text-ball">PADOL PICKLEBALL COURT</div>
               <div className="text-[10px] uppercase tracking-[0.24em] text-white/45">Platform Console</div>
             </div>
           </div>

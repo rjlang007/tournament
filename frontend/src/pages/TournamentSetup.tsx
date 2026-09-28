@@ -89,7 +89,7 @@ export default function TournamentSetup() {
           <div className="mb-8 flex items-center justify-between gap-3">
             <div>
               <div className="text-[10px] uppercase tracking-[0.28em] text-ball/80">Your court, in motion</div>
-              <h1 className="brand-lockup mt-2 font-display text-4xl font-bold tracking-tight text-ball sm:text-5xl">Falcon Flick Zone</h1>
+              <h1 className="brand-lockup mt-2 font-display text-4xl font-bold tracking-tight text-ball sm:text-5xl">PADOL PICKLEBALL COURT</h1>
             </div>
             <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
               {(user?.role === "ADMIN" || user?.role === "SUPERADMIN") && <Link to="/platform" className="secondary-button px-3 py-2 text-xs">Accounts</Link>}
