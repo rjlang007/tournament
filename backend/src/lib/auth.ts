@@ -35,7 +35,7 @@ export async function refreshSubscriptionStatus(user: {
 }
 
 export function signSession(userId: string): string {
-  return jwt.sign({ sub: userId }, JWT_SECRET, { expiresIn: "30d" });
+  return jwt.sign({ sub: userId }, JWT_SECRET, { expiresIn: "30m" });
 }
 
 export function setSessionCookie(res: Response, token: string) {
@@ -43,7 +43,7 @@ export function setSessionCookie(res: Response, token: string) {
     httpOnly: true,
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
-    maxAge: 30 * 24 * 60 * 60 * 1000,
+    maxAge: 30 * 60 * 1000,
   });
 }
 

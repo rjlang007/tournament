@@ -12,6 +12,7 @@ type AuthState = {
 };
 
 const AuthContext = createContext<AuthState | null>(null);
+const INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
 
 function extractError(err: any): string {
   return err?.response?.data?.error || "Something went wrong. Please try again.";
@@ -62,9 +63,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    await api.post("/auth/logout");
+    try {
+      await api.post("/auth/logout");
+    } catch {
+      // Ignore logout failures; the UI should still clear the local session.
+    }
     setUser(null);
   }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    let timeoutId: number | undefined;
+    const resetTimer = () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(() => {
+        void logout();
+      }, INACTIVITY_TIMEOUT_MS);
+    };
+
+    const activityEvents = ["mousemove", "keydown", "click", "touchstart", "scroll", "pointerdown"];
+    resetTimer();
+    activityEvents.forEach((eventName) => window.addEventListener(eventName, resetTimer, { passive: true }));
+
+    return () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      activityEvents.forEach((eventName) => window.removeEventListener(eventName, resetTimer));
+    };
+  }, [user, logout]);
 
   return (
     <AuthContext.Provider value={{ user, loading, error, register, login, logout, refresh }}>
