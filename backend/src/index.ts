@@ -152,6 +152,7 @@ const frontendDist = path.resolve(__dirname, "../../frontend/dist");
 app.use(express.static(frontendDist));
 app.use("/uploads/avatars", express.static(path.resolve(__dirname, "../uploads/avatars")));
 app.use("/uploads/tournaments", express.static(path.resolve(__dirname, "../uploads/tournaments")));
+app.use("/uploads/payment-qrs", express.static(path.resolve(__dirname, "../uploads/payment-qrs")));
 app.get("*", (_req, res, next) => {
   if (_req.path.startsWith("/api/")) return next();
   res.sendFile(path.join(frontendDist, "index.html"), (error) => {

@@ -36,6 +36,10 @@ export type RegistrationField = {
   required?: boolean;
 };
 
+export type EventDivisionName = "BEGINNER" | "NOVICE" | "LOW_INTERMEDIATE" | "HIGH_INTERMEDIATE";
+export type EventDivision = { name: EventDivisionName; capacity: number; registered: number };
+export type EventPaymentMethod = "QR" | "IN_PERSON";
+
 export type PostHost = {
   id: string;
   username: string;
@@ -49,8 +53,14 @@ export type PostSummary = {
   location: string;
   amount?: string | null;
   capacity?: number | null;
+  divisions?: EventDivision[];
+  paymentMethods?: EventPaymentMethod[];
+  paymentQrUrl?: string | null;
   scheduledStart?: string | null;
   scheduledEnd?: string | null;
+  locationAddress?: string | null;
+  locationLatitude?: number | null;
+  locationLongitude?: number | null;
   createdAt: string;
   host: PostHost;
   photos: string[];
@@ -67,8 +77,14 @@ export type PostDetail = {
   location: string;
   amount?: string | null;
   capacity?: number | null;
+  divisions: EventDivision[];
+  paymentMethods: EventPaymentMethod[];
+  paymentQrUrl?: string | null;
   scheduledStart?: string | null;
   scheduledEnd?: string | null;
+  locationAddress?: string | null;
+  locationLatitude?: number | null;
+  locationLongitude?: number | null;
   registrationLink?: string | null;
   registrationFields: RegistrationField[];
   createdAt: string;
@@ -83,6 +99,8 @@ export type PostDetail = {
     applicantName: string;
     skillLevel: SkillLevel;
     hasPaymentProof: boolean;
+    division?: EventDivisionName | null;
+    paymentMethod?: EventPaymentMethod | null;
   } | null;
   tournamentId?: string | null;
 };

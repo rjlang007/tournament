@@ -92,6 +92,7 @@ export default function Feed() {
               <h2 className="font-display font-semibold text-white text-lg leading-snug">{post.title}</h2>
               <p className="text-sm text-white/60 line-clamp-2">{post.description}</p>
               {post.scheduledStart && <p className="text-xs text-ball/80">{new Date(post.scheduledStart).toLocaleString()}</p>}
+              {post.divisions && post.divisions.length > 0 && <p className="text-xs text-white/55">{post.divisions.map((division) => `${division.name.toLowerCase().replace(/_/g, " ")} ${division.registered}/${division.capacity}`).join(" · ")}</p>}
               <div className="mt-auto pt-2 flex items-center justify-between text-xs text-white/50">
                 <span>📍 {post.location}</span>
                 {post.amount && <span className="text-ball">{post.amount}</span>}

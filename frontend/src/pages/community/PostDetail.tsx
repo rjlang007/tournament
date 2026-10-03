@@ -1,7 +1,9 @@
 import { useEffect, useState, FormEvent } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { API_URL, api, fileUrl, PostDetail as PostDetailType } from "../../lib/api";
+import type { EventDivisionName, EventPaymentMethod } from "../../lib/api";
 import { useAuth } from "../../context/AuthContext";
+import TournamentLocationMap from "../../components/TournamentLocationMap";
 
 export default function PostDetail() {
   const { user } = useAuth();
@@ -15,7 +17,8 @@ export default function PostDetail() {
   const [morePhotos, setMorePhotos] = useState<FileList | null>(null);
   const [uploadingPhotos, setUploadingPhotos] = useState(false);
   const [applicantName, setApplicantName] = useState("");
-  const [skillLevel, setSkillLevel] = useState<"BEGINNER" | "AVERAGE" | "ADVANCE">("BEGINNER");
+  const [division, setDivision] = useState<EventDivisionName | "">("");
+  const [paymentMethod, setPaymentMethod] = useState<EventPaymentMethod>("IN_PERSON");
   const [contact, setContact] = useState("");
   const [paymentProof, setPaymentProof] = useState<File | null>(null);
   const [submissions, setSubmissions] = useState<any[]>([]);
@@ -30,8 +33,9 @@ export default function PostDetail() {
         if (data.myRegistration?.answers) setAnswers(data.myRegistration.answers);
         if (data.myRegistration) {
           setApplicantName(data.myRegistration.applicantName);
-          setSkillLevel(data.myRegistration.skillLevel);
         }
+        setDivision(data.myRegistration?.division ?? data.divisions[0]?.name ?? "");
+        setPaymentMethod(data.myRegistration?.paymentMethod ?? data.paymentMethods[0] ?? "IN_PERSON");
         if (data.isOwner) api.get(`/posts/${postId}/submissions`).then(({ data: rows }) => setSubmissions(rows));
       })
       .catch((err) => setError(err?.response?.data?.error || "Couldn't load this tournament."));
@@ -45,7 +49,7 @@ export default function PostDetail() {
     setRegistering(true);
     setRegisterMsg(null);
     try {
-      await api.post(`/posts/${postId}/register`, { answers, applicantName, skillLevel, contact });
+      await api.post(`/posts/${postId}/register`, { answers, applicantName, contact, division, paymentMethod });
       if (paymentProof) {
         const form = new FormData();
         form.append("proof", paymentProof);
@@ -107,7 +111,11 @@ export default function PostDetail() {
 
   if (error) return <p className="text-advance">{error}</p>;
   if (!post) return <p className="text-white/60">Loading…</p>;
-  const eventFull = post.capacity != null && post.registrationCount >= post.capacity;
+  const existingActiveRequest = post.myRegistration?.status === "PENDING" || post.myRegistration?.status === "APPROVED";
+  const eventFull = post.capacity != null && post.registrationCount - (existingActiveRequest ? 1 : 0) >= post.capacity;
+  const selectedDivision = post.divisions.find((item) => item.name === division);
+  const divisionOwnRequest = existingActiveRequest && post.myRegistration?.division === division;
+  const divisionFull = !!selectedDivision && selectedDivision.registered - (divisionOwnRequest ? 1 : 0) >= selectedDivision.capacity;
 
   return (
     <div className="max-w-2xl">
@@ -165,6 +173,7 @@ export default function PostDetail() {
         <p className="text-white/80">
           <span className="text-white/50">📍 Location:</span> {post.location}
         </p>
+        {post.locationAddress && <p className="text-white/80"><span className="text-white/50">Address:</span> {post.locationAddress}</p>}
         {post.scheduledStart && <p className="text-white/80"><span className="text-white/50">🗓 Starts:</span> {new Date(post.scheduledStart).toLocaleString()}</p>}
         {post.scheduledEnd && <p className="text-white/80"><span className="text-white/50">Ends:</span> {new Date(post.scheduledEnd).toLocaleString()}</p>}
         {post.amount && (
@@ -176,7 +185,11 @@ export default function PostDetail() {
           <span className="text-white/50">👥 Registered:</span> {post.registrationCount}
         </p>
         {post.capacity != null && <p className="text-white/80"><span className="text-white/50">Open spots:</span> {Math.max(0, post.capacity - post.registrationCount)}</p>}
+        {post.divisions.length > 0 && <div className="border-t border-white/10 pt-2"><p className="mb-1 text-white/50">Player divisions</p><div className="grid gap-1 sm:grid-cols-2">{post.divisions.map((item) => <p key={item.name} className="text-white/75">{divisionLabel(item.name)}: {item.registered}/{item.capacity} players</p>)}</div></div>}
+        <p className="text-white/80"><span className="text-white/50">Payment options:</span> {post.paymentMethods.map((method) => method === "QR" ? "QR / e-wallet" : "Pay in person").join(" · ")}</p>
       </div>
+
+      {post.locationLatitude != null && post.locationLongitude != null && <section className="mb-5 space-y-2"><h3 className="font-display font-semibold text-white">Venue map</h3><div className="overflow-hidden rounded-lg border border-white/10"><TournamentLocationMap latitude={post.locationLatitude} longitude={post.locationLongitude} /></div></section>}
 
       <p className="text-white/80 whitespace-pre-wrap mb-4">{post.description}</p>
       {post.details && (
@@ -186,6 +199,7 @@ export default function PostDetail() {
         </>
       )}
       {post.paymentInstructions && <div className="mb-6"><h3 className="font-display font-semibold text-white mb-1">Payment instructions</h3><p className="text-white/70 whitespace-pre-wrap">{post.paymentInstructions}</p></div>}
+      {post.paymentMethods.includes("QR") && post.paymentQrUrl && <div className="mb-6"><h3 className="mb-2 font-display font-semibold text-white">Scan to pay</h3><img src={fileUrl(post.paymentQrUrl)} alt={`Payment QR for ${post.title}`} className="max-h-72 w-full rounded-lg border border-white/10 bg-white object-contain p-3 sm:w-auto" /></div>}
 
       {post.registrationLink && (
         <a
@@ -208,64 +222,31 @@ export default function PostDetail() {
         </div>
       )}
 
-      {user && post.tournamentId && post.registrationFields.length > 0 && post.myRegistration?.status !== "APPROVED" && (
-        <div className="rounded-xl border border-white/10 p-4">
-          <h3 className="font-display font-semibold text-white mb-3">Register for this tournament</h3>
-          <form onSubmit={onRegister} className="space-y-3">
-            {post.registrationFields.map((f) => (
-              <div key={f.label}>
-                <label className="block text-sm text-white/70 mb-1">
-                  {f.label}
-                  {f.required && <span className="text-advance"> *</span>}
-                </label>
-                {f.type === "textarea" ? (
-                  <textarea
-                    className="w-full rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-white outline-none focus:border-ball"
-                    value={answers[f.label] || ""}
-                    onChange={(e) => setAnswers({ ...answers, [f.label]: e.target.value })}
-                    required={f.required}
-                  />
-                ) : (
-                  <input
-                    type={f.type === "number" ? "number" : f.type === "email" ? "email" : f.type === "phone" ? "tel" : "text"}
-                    className="w-full rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-white outline-none focus:border-ball"
-                    value={answers[f.label] || ""}
-                    onChange={(e) => setAnswers({ ...answers, [f.label]: e.target.value })}
-                    required={f.required}
-                  />
-                )}
-              </div>
-            ))}
-            {registerMsg && <p className="text-sm text-white/70">{registerMsg}</p>}
-            <button
-              type="submit"
-              disabled={registering || (eventFull && post.myRegistration?.status !== "PENDING")}
-              className="rounded-lg bg-ball text-neutral-900 font-display font-semibold px-4 py-2 disabled:opacity-50"
-            >
-              {post.myRegistration ? "Update registration" : registering ? "Registering…" : "Register"}
-            </button>
-          </form>
-        </div>
-      )}
-
       {user && post.tournamentId && <div className="mt-4 rounded-xl border border-white/10 p-4">
         {post.myRegistration?.status === "APPROVED" ? <p className="text-sm text-emerald-300">Your place is confirmed.</p> : <>
         <h3 className="font-display font-semibold text-white mb-1">Request entry</h3>
-        <p className="mb-3 text-xs text-white/50">Follow the payment instructions in the event details. Upload a receipt if you paid electronically; the organizer can also verify in-person payment.</p>
+        <p className="mb-3 text-xs text-white/50">Choose a division and payment method. The organizer will confirm your request.</p>
         {eventFull && post.myRegistration?.status !== "PENDING" && <p className="mb-3 text-sm text-advance">This event has no open spots remaining.</p>}
         <form onSubmit={onRegister} className="space-y-3">
+          {post.divisions.length > 0 && <label className="block text-sm text-white/70">Division<select className="mt-1 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white" value={division} onChange={(event) => setDivision(event.target.value as EventDivisionName)} required><option value="" disabled>Select your division</option>{post.divisions.map((item) => { const spotsLeft = item.capacity - item.registered + (post.myRegistration?.division === item.name && existingActiveRequest ? 1 : 0); return <option key={item.name} value={item.name} disabled={spotsLeft <= 0}>{divisionLabel(item.name)} · {Math.max(0, spotsLeft)} spots left</option>; })}</select></label>}
           <input className="w-full rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-white" placeholder="Your full name" value={applicantName} onChange={(e) => setApplicantName(e.target.value)} required />
-          <div className="grid grid-cols-2 gap-3"><select className="rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-white" value={skillLevel} onChange={(e) => setSkillLevel(e.target.value as typeof skillLevel)}><option value="BEGINNER">Beginner</option><option value="AVERAGE">Average</option><option value="ADVANCE">Advanced</option></select><input className="rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-white" placeholder="Contact" value={contact} onChange={(e) => setContact(e.target.value)} /></div>
-          <input type="file" accept="image/*" onChange={(e) => setPaymentProof(e.target.files?.[0] ?? null)} className="text-sm text-white/70" />
+          <input className="w-full rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-white" placeholder="Contact number" value={contact} onChange={(e) => setContact(e.target.value)} />
+          {post.paymentMethods.length > 1 && <label className="block text-sm text-white/70">How will you pay?<select className="mt-1 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as EventPaymentMethod)}>{post.paymentMethods.map((method) => <option key={method} value={method}>{method === "QR" ? "QR / e-wallet" : "Pay in person"}</option>)}</select></label>}
+          {post.paymentMethods.includes("QR") && paymentMethod === "QR" && <label className="block text-sm text-white/70">Payment receipt (optional until payment is made)<input type="file" accept="image/*" onChange={(e) => setPaymentProof(e.target.files?.[0] ?? null)} className="mt-1 block text-sm text-white/70" /></label>}
+          {post.registrationFields.map((field) => <div key={field.label}><label className="mb-1 block text-sm text-white/70">{field.label}{field.required && <span className="text-advance"> *</span>}</label>{field.type === "textarea" ? <textarea className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white" value={answers[field.label] || ""} onChange={(event) => setAnswers({ ...answers, [field.label]: event.target.value })} required={field.required} /> : <input type={field.type === "number" ? "number" : field.type === "email" ? "email" : field.type === "phone" ? "tel" : "text"} className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white" value={answers[field.label] || ""} onChange={(event) => setAnswers({ ...answers, [field.label]: event.target.value })} required={field.required} />}</div>)}
           {post.myRegistration && <p className="text-xs text-white/50">Request status: {post.myRegistration.status}</p>}
           {post.myRegistration?.status === "PENDING" && <button type="button" onClick={withdrawRequest} disabled={withdrawing} className="text-sm text-white/50 hover:text-white disabled:opacity-50">{withdrawing ? "Withdrawing…" : "Withdraw request"}</button>}
           {registerMsg && <p className="text-sm text-white/70">{registerMsg}</p>}
-          <button type="submit" disabled={registering || (eventFull && post.myRegistration?.status !== "PENDING")} className="rounded-lg bg-ball text-neutral-900 font-display font-semibold px-4 py-2 disabled:opacity-50">{registering ? "Submitting…" : post.myRegistration?.status === "REJECTED" ? "Resubmit request" : post.myRegistration ? "Update request" : "Submit request"}</button>
+          <button type="submit" disabled={registering || ((eventFull || divisionFull) && post.myRegistration?.status !== "PENDING")} className="rounded-lg bg-ball text-neutral-900 font-display font-semibold px-4 py-2 disabled:opacity-50">{registering ? "Submitting…" : post.myRegistration?.status === "REJECTED" ? "Resubmit request" : post.myRegistration ? "Update request" : "Request a spot"}</button>
         </form>
         </>}
       </div>}
 
-      {post.isOwner && post.tournamentId && <div className="mt-6 rounded-xl border border-white/10 p-4"><h3 className="font-display font-semibold text-white mb-3">Entry requests</h3><div className="space-y-2">{submissions.map((submission) => <div key={submission.id} className="flex flex-wrap items-start justify-between gap-3 rounded-lg bg-white/[0.03] p-3 text-sm"><div className="min-w-0"><div className="text-white">{submission.applicantName} <span className="text-xs text-white/40">@{submission.user?.username}</span></div><div className="text-xs text-white/50">{submission.skillLevel} · {submission.status} · {submission.contact || "No contact provided"} · {new Date(submission.submittedAt).toLocaleString()}</div>{Object.entries(submission.answers ?? {}).map(([label, answer]) => <div key={label} className="mt-1 text-xs text-white/60">{label}: {String(answer)}</div>)}<div className="mt-1 text-xs">{submission.paymentProofStoredFile ? <a className="text-ball" href={`${API_URL}/api/posts/${postId}/submissions/${submission.id}/payment-proof`} target="_blank" rel="noreferrer">View payment proof</a> : <span className="text-white/40">No proof uploaded; verify in person if applicable</span>}</div></div>{submission.status === "PENDING" && <div className="flex shrink-0 gap-2"><button onClick={() => reviewSubmission(submission.id, "APPROVED")} className="secondary-button px-2 py-1 text-xs text-emerald-300">Approve</button><button onClick={() => reviewSubmission(submission.id, "REJECTED")} className="secondary-button px-2 py-1 text-xs text-red-300">Reject</button></div>}</div>)}</div></div>}
+      {post.isOwner && post.tournamentId && <div className="mt-6 rounded-xl border border-white/10 p-4"><h3 className="font-display font-semibold text-white mb-3">Entry requests</h3><div className="space-y-2">{submissions.map((submission) => <div key={submission.id} className="flex flex-wrap items-start justify-between gap-3 rounded-lg bg-white/[0.03] p-3 text-sm"><div className="min-w-0"><div className="text-white">{submission.applicantName} <span className="text-xs text-white/40">@{submission.user?.username}</span></div><div className="text-xs text-white/50">{submission.division ? divisionLabel(submission.division) : submission.skillLevel} · {submission.paymentMethod === "QR" ? "QR / e-wallet" : "Pay in person"} · {submission.status} · {submission.contact || "No contact provided"} · {new Date(submission.submittedAt).toLocaleString()}</div>{Object.entries(submission.answers ?? {}).map(([label, answer]) => <div key={label} className="mt-1 text-xs text-white/60">{label}: {String(answer)}</div>)}<div className="mt-1 text-xs">{submission.paymentProofStoredFile ? <a className="text-ball" href={`${API_URL}/api/posts/${postId}/submissions/${submission.id}/payment-proof`} target="_blank" rel="noreferrer">View payment proof</a> : <span className="text-white/40">No proof uploaded; verify in person if applicable</span>}</div></div>{submission.status === "PENDING" && <div className="flex shrink-0 gap-2"><button onClick={() => reviewSubmission(submission.id, "APPROVED")} className="secondary-button px-2 py-1 text-xs text-emerald-300">Approve</button><button onClick={() => reviewSubmission(submission.id, "REJECTED")} className="secondary-button px-2 py-1 text-xs text-red-300">Reject</button></div>}</div>)}</div></div>}
     </div>
   );
+}
+
+function divisionLabel(name: string) {
+  return name.toLowerCase().split("_").map((word) => word[0].toUpperCase() + word.slice(1)).join(" ");
 }

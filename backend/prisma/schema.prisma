@@ -127,6 +127,9 @@ model TournamentPost {
   location           String
   amount             String?
   capacity           Int?
+  divisions          Json?
+  paymentMethods     Json?
+  paymentQrStoredFile String?
   registrationLink   String?
   registrationFields Json?
   createdAt          DateTime @default(now())
@@ -165,6 +168,8 @@ model RegistrationSubmission {
   applicantName String
   skillLevel  SkillLevel
   contact     String?
+  division    String?
+  paymentMethod String?
   paymentProofUrl String?
   paymentProofStoredFile String?
   @@unique([postId, userId])

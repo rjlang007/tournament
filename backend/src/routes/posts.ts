@@ -2,9 +2,10 @@ import { Router } from "express";
 import path from "path";
 import fs from "fs/promises";
 import { z } from "zod";
+import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { attachUser, requireAuth, refreshSubscriptionStatus, AuthedRequest } from "../lib/auth";
-import { uploadTournamentPhotos, uploadPaymentProof, TOURNAMENT_PHOTO_DIR } from "../lib/uploads";
+import { uploadTournamentPhotos, uploadPaymentProof, uploadPaymentQr, PAYMENT_QR_DIR, TOURNAMENT_PHOTO_DIR } from "../lib/uploads";
 import { defaultAvatarUrl } from "../lib/defaultAvatars";
 import { PHOTO_LIFETIME_DAYS } from "../lib/cleanup";
 import { enqueuePlayer } from "../lib/queue";
@@ -33,6 +34,17 @@ const registrationFieldSchema = z.object({
   required: z.boolean().optional().default(false),
 });
 
+const DIVISION_NAMES = ["BEGINNER", "NOVICE", "LOW_INTERMEDIATE", "HIGH_INTERMEDIATE"] as const;
+const divisionSchema = z.object({
+  name: z.enum(DIVISION_NAMES),
+  capacity: z.number().int().min(1).max(1000),
+});
+const divisionsSchema = z.array(divisionSchema).max(4).superRefine((divisions, context) => {
+  if (new Set(divisions.map((division) => division.name)).size !== divisions.length) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: "Each player division can only be added once." });
+  }
+});
+
 const postSchema = z.object({
   title: z.string().min(1, "Title is required.").max(120),
   description: z.string().min(1, "Description is required.").max(3000),
@@ -41,6 +53,11 @@ const postSchema = z.object({
   location: z.string().min(1, "Location is required.").max(200),
   amount: z.string().max(80).optional(),
   capacity: z.number().int().min(1).max(1000).nullable().optional(),
+  divisions: divisionsSchema.default([]),
+  paymentMethods: z.array(z.enum(["QR", "IN_PERSON"])).min(1).max(2).default(["IN_PERSON"]),
+  locationAddress: z.string().max(300).nullable().optional(),
+  locationLatitude: z.number().min(-90).max(90).nullable().optional(),
+  locationLongitude: z.number().min(-180).max(180).nullable().optional(),
   scheduledStart: z.string().datetime().nullable().optional(),
   scheduledEnd: z.string().datetime().nullable().optional(),
   registrationLink: z.string().url("Registration link must be a valid URL.").max(500).optional().or(z.literal("")),
@@ -75,7 +92,7 @@ postsRouter.get("/", attachUser, async (_req, res) => {
     include: {
       host: true,
       photos: { orderBy: { uploadedAt: "asc" } },
-      tournament: { select: { scheduledStart: true, scheduledEnd: true } },
+      tournament: { select: { scheduledStart: true, scheduledEnd: true, locationAddress: true, locationLatitude: true, locationLongitude: true } },
     },
   });
   const registrationCounts = await prisma.registrationSubmission.groupBy({
@@ -84,6 +101,12 @@ postsRouter.get("/", attachUser, async (_req, res) => {
     _count: { _all: true },
   });
   const countsByPost = new Map(registrationCounts.map((row) => [row.postId, row._count._all]));
+  const divisionCounts = await prisma.registrationSubmission.groupBy({
+    by: ["postId", "division"],
+    where: { postId: { in: posts.map((post) => post.id) }, status: { in: ["PENDING", "APPROVED"] } },
+    _count: { _all: true },
+  });
+  const countsByDivision = new Map(divisionCounts.map((row) => [`${row.postId}:${row.division ?? ""}`, row._count._all]));
 
   res.json({
     photoPolicyNote: PHOTO_POLICY_NOTE,
@@ -94,8 +117,17 @@ postsRouter.get("/", attachUser, async (_req, res) => {
       location: p.location,
       amount: p.amount,
       capacity: p.capacity,
+      divisions: (Array.isArray(p.divisions) ? p.divisions : []).map((division: { name: string; capacity: number }) => ({
+        ...division,
+        registered: countsByDivision.get(`${p.id}:${division.name}`) ?? 0,
+      })),
+      paymentMethods: Array.isArray(p.paymentMethods) ? p.paymentMethods : ["IN_PERSON"],
+      paymentQrUrl: p.paymentQrStoredFile ? `/uploads/payment-qrs/${p.paymentQrStoredFile}` : null,
       scheduledStart: p.tournament?.scheduledStart ?? null,
       scheduledEnd: p.tournament?.scheduledEnd ?? null,
+      locationAddress: p.tournament?.locationAddress ?? null,
+      locationLatitude: p.tournament?.locationLatitude ?? null,
+      locationLongitude: p.tournament?.locationLongitude ?? null,
       createdAt: p.createdAt,
       host: hostSummary(p.host),
       photos: p.photos.map((ph: any) => ph.url),
@@ -111,13 +143,19 @@ postsRouter.get("/:id", attachUser, async (req: AuthedRequest, res) => {
     include: {
       host: true,
       photos: { orderBy: { uploadedAt: "asc" } },
-      tournament: { select: { scheduledStart: true, scheduledEnd: true } },
+      tournament: { select: { scheduledStart: true, scheduledEnd: true, locationAddress: true, locationLatitude: true, locationLongitude: true } },
     },
   });
   if (!post) return res.status(404).json({ error: "Tournament post not found." });
   const registrationCount = await prisma.registrationSubmission.count({
     where: { postId: post.id, status: { in: ["PENDING", "APPROVED"] } },
   });
+  const divisionCounts = await prisma.registrationSubmission.groupBy({
+    by: ["division"],
+    where: { postId: post.id, status: { in: ["PENDING", "APPROVED"] } },
+    _count: { _all: true },
+  });
+  const countsByDivision = new Map(divisionCounts.map((row) => [row.division ?? "", row._count._all]));
 
   const mySubmission = req.userId
     ? await prisma.registrationSubmission.findUnique({
@@ -135,6 +173,15 @@ postsRouter.get("/:id", attachUser, async (req: AuthedRequest, res) => {
     location: post.location,
     amount: post.amount,
     capacity: post.capacity,
+    divisions: (Array.isArray(post.divisions) ? post.divisions as unknown as { name: string; capacity: number }[] : []).map((division) => ({
+      ...division,
+      registered: countsByDivision.get(division.name) ?? 0,
+    })),
+    paymentMethods: Array.isArray(post.paymentMethods) ? post.paymentMethods : ["IN_PERSON"],
+    paymentQrUrl: post.paymentQrStoredFile ? `/uploads/payment-qrs/${post.paymentQrStoredFile}` : null,
+    locationAddress: post.tournament?.locationAddress ?? null,
+    locationLatitude: post.tournament?.locationLatitude ?? null,
+    locationLongitude: post.tournament?.locationLongitude ?? null,
     scheduledStart: post.tournament?.scheduledStart ?? null,
     scheduledEnd: post.tournament?.scheduledEnd ?? null,
     registrationLink: post.registrationLink,
@@ -156,6 +203,9 @@ postsRouter.post("/", attachUser, requireAuth, async (req: AuthedRequest, res) =
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
   const data = parsed.data;
+  const hasLatitude = typeof data.locationLatitude === "number";
+  const hasLongitude = typeof data.locationLongitude === "number";
+  if (hasLatitude !== hasLongitude) return res.status(400).json({ error: "Choose both map coordinates together." });
   const scheduledStart = data.scheduledStart ? new Date(data.scheduledStart) : null;
   const scheduledEnd = data.scheduledEnd ? new Date(data.scheduledEnd) : null;
   if (scheduledEnd && (!scheduledStart || scheduledEnd <= scheduledStart)) {
@@ -168,13 +218,36 @@ postsRouter.post("/", attachUser, requireAuth, async (req: AuthedRequest, res) =
 
   const post = await prisma.$transaction(async (tx) => {
     let tournamentId = data.tournamentId;
+    const capacity = data.divisions.length > 0
+      ? data.divisions.reduce((total, division) => total + division.capacity, 0)
+      : data.capacity;
     if (!tournamentId) {
       const tournament = await tx.tournament.create({
-        data: { name: data.title, type: data.tournamentType, ownerId: req.userId!, locationName: data.location, scheduledStart, scheduledEnd },
+        data: {
+          name: data.title,
+          type: data.tournamentType,
+          ownerId: req.userId!,
+          locationName: data.location,
+          locationAddress: data.locationAddress,
+          locationLatitude: data.locationLatitude,
+          locationLongitude: data.locationLongitude,
+          scheduledStart,
+          scheduledEnd,
+        },
       });
       tournamentId = tournament.id;
-    } else if (data.scheduledStart !== undefined || data.scheduledEnd !== undefined) {
-      await tx.tournament.update({ where: { id: tournamentId }, data: { scheduledStart, scheduledEnd } });
+    } else {
+      await tx.tournament.update({
+        where: { id: tournamentId },
+        data: {
+          locationName: data.location,
+          locationAddress: data.locationAddress,
+          locationLatitude: data.locationLatitude,
+          locationLongitude: data.locationLongitude,
+          scheduledStart,
+          scheduledEnd,
+        },
+      });
     }
     return tx.tournamentPost.create({
       data: {
@@ -185,7 +258,9 @@ postsRouter.post("/", attachUser, requireAuth, async (req: AuthedRequest, res) =
         paymentInstructions: data.paymentInstructions,
         location: data.location,
         amount: data.amount,
-        capacity: data.capacity,
+        capacity,
+        divisions: data.divisions.length ? data.divisions as Prisma.InputJsonValue : Prisma.DbNull,
+        paymentMethods: data.paymentMethods as Prisma.InputJsonValue,
         registrationLink: data.registrationLink || null,
         registrationFields: data.registrationFields ?? undefined,
         tournamentId,
@@ -212,6 +287,11 @@ postsRouter.patch("/:id", attachUser, requireAuth, async (req: AuthedRequest, re
     if (!tournament) return res.status(403).json({ error: "You can only link tournaments you own." });
   }
 
+  const hasLatitude = parsed.data.locationLatitude === undefined ? undefined : typeof parsed.data.locationLatitude === "number";
+  const hasLongitude = parsed.data.locationLongitude === undefined ? undefined : typeof parsed.data.locationLongitude === "number";
+  if (hasLatitude !== undefined && hasLongitude !== undefined && hasLatitude !== hasLongitude) {
+    return res.status(400).json({ error: "Choose both map coordinates together." });
+  }
   const scheduledStart = parsed.data.scheduledStart === undefined ? undefined : parsed.data.scheduledStart ? new Date(parsed.data.scheduledStart) : null;
   const scheduledEnd = parsed.data.scheduledEnd === undefined ? undefined : parsed.data.scheduledEnd ? new Date(parsed.data.scheduledEnd) : null;
   const effectiveStart = scheduledStart === undefined ? post.tournament?.scheduledStart ?? null : scheduledStart;
@@ -219,27 +299,37 @@ postsRouter.patch("/:id", attachUser, requireAuth, async (req: AuthedRequest, re
   if (effectiveEnd && (!effectiveStart || effectiveEnd <= effectiveStart)) {
     return res.status(400).json({ error: "Event end time must be after its start time." });
   }
-  const { scheduledStart: _scheduledStart, scheduledEnd: _scheduledEnd, ...postFields } = parsed.data;
+  const divisions = parsed.data.divisions;
+  const capacity = divisions === undefined
+    ? parsed.data.capacity
+    : divisions.length > 0 ? divisions.reduce((total, division) => total + division.capacity, 0) : null;
+  const { scheduledStart: _scheduledStart, scheduledEnd: _scheduledEnd, locationAddress: _locationAddress, locationLatitude: _locationLatitude, locationLongitude: _locationLongitude, ...postFields } = parsed.data;
 
   const updated = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT "id" FROM "TournamentPost" WHERE "id" = ${post.id} FOR UPDATE`;
-    if (parsed.data.capacity !== undefined && parsed.data.capacity !== null) {
+    if (capacity !== undefined && capacity !== null) {
       const activeCount = await tx.registrationSubmission.count({
         where: { postId: post.id, status: { in: ["PENDING", "APPROVED"] } },
       });
-      if (parsed.data.capacity < activeCount) return { capacityConflict: true as const };
+      if (capacity < activeCount) return { capacityConflict: true as const };
     }
     const updatedPost = await tx.tournamentPost.update({
       where: { id: post.id },
       data: {
         ...postFields,
+        capacity,
+        divisions: divisions === undefined ? undefined : divisions.length ? divisions as Prisma.InputJsonValue : Prisma.DbNull,
+        paymentMethods: parsed.data.paymentMethods as Prisma.InputJsonValue | undefined,
         registrationLink: parsed.data.registrationLink === "" ? null : parsed.data.registrationLink,
       },
     });
     const tournamentId = parsed.data.tournamentId ?? post.tournamentId;
-    const tournamentChanges: { name?: string; locationName?: string; scheduledStart?: Date | null; scheduledEnd?: Date | null } = {};
+    const tournamentChanges: { name?: string; locationName?: string; locationAddress?: string | null; locationLatitude?: number | null; locationLongitude?: number | null; scheduledStart?: Date | null; scheduledEnd?: Date | null } = {};
     if (parsed.data.title !== undefined) tournamentChanges.name = parsed.data.title;
     if (parsed.data.location !== undefined) tournamentChanges.locationName = parsed.data.location;
+    if (parsed.data.locationAddress !== undefined) tournamentChanges.locationAddress = parsed.data.locationAddress;
+    if (parsed.data.locationLatitude !== undefined) tournamentChanges.locationLatitude = parsed.data.locationLatitude;
+    if (parsed.data.locationLongitude !== undefined) tournamentChanges.locationLongitude = parsed.data.locationLongitude;
     if (scheduledStart !== undefined) tournamentChanges.scheduledStart = scheduledStart;
     if (scheduledEnd !== undefined) tournamentChanges.scheduledEnd = scheduledEnd;
     if (tournamentId && Object.keys(tournamentChanges).length > 0) {
@@ -266,7 +356,36 @@ postsRouter.delete("/:id", attachUser, requireAuth, async (req: AuthedRequest, r
   for (const photo of post.photos) {
     await unlinkTournamentPhoto(photo.storedFile);
   }
+  if (post.paymentQrStoredFile) await unlinkPaymentQr(post.paymentQrStoredFile);
   await prisma.tournamentPost.delete({ where: { id: post.id } });
+  res.json({ ok: true });
+});
+
+postsRouter.post("/:id/payment-qr", attachUser, requireAuth, uploadPaymentQr.single("qr"), async (req: AuthedRequest, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  const post = await prisma.tournamentPost.findUnique({ where: { id: req.params.id } });
+  if (!post) {
+    if (req.file) await unlinkPaymentQr(req.file.filename);
+    return res.status(404).json({ error: "Event not found." });
+  }
+  if (post.hostId !== req.userId) {
+    if (req.file) await unlinkPaymentQr(req.file.filename);
+    return res.status(403).json({ error: "Only the event host can manage its payment QR." });
+  }
+  if (!req.file) return res.status(400).json({ error: "Choose a QR image to upload." });
+
+  const updated = await prisma.tournamentPost.update({ where: { id: post.id }, data: { paymentQrStoredFile: req.file.filename } });
+  if (post.paymentQrStoredFile) await unlinkPaymentQr(post.paymentQrStoredFile);
+  res.json({ paymentQrUrl: `/uploads/payment-qrs/${updated.paymentQrStoredFile}` });
+});
+
+postsRouter.delete("/:id/payment-qr", attachUser, requireAuth, async (req: AuthedRequest, res) => {
+  if (!(await requireAdmin(req, res))) return;
+  const post = await prisma.tournamentPost.findUnique({ where: { id: req.params.id } });
+  if (!post) return res.status(404).json({ error: "Event not found." });
+  if (post.hostId !== req.userId) return res.status(403).json({ error: "Only the event host can manage its payment QR." });
+  if (post.paymentQrStoredFile) await unlinkPaymentQr(post.paymentQrStoredFile);
+  await prisma.tournamentPost.update({ where: { id: post.id }, data: { paymentQrStoredFile: null } });
   res.json({ ok: true });
 });
 
@@ -328,12 +447,28 @@ postsRouter.post("/:id/register", attachUser, requireAuth, async (req: AuthedReq
   const fields = ((post.registrationFields as any[]) ?? []) as { label: string; required?: boolean }[];
   const answers = req.body?.answers && typeof req.body.answers === "object" ? req.body.answers : {};
   const applicantName = typeof req.body?.applicantName === "string" ? req.body.applicantName.trim() : "";
-  const skillLevel = req.body?.skillLevel;
   const contact = typeof req.body?.contact === "string" ? req.body.contact.trim() : null;
+  const division = typeof req.body?.division === "string" ? req.body.division : null;
+  const paymentMethod = req.body?.paymentMethod;
+  const divisions = Array.isArray(post.divisions) ? post.divisions as unknown as { name: string; capacity: number }[] : [];
+  const divisionSkillLevels: Record<string, "BEGINNER" | "AVERAGE" | "ADVANCE"> = {
+    BEGINNER: "BEGINNER",
+    NOVICE: "BEGINNER",
+    LOW_INTERMEDIATE: "AVERAGE",
+    HIGH_INTERMEDIATE: "ADVANCE",
+  };
+  const skillLevel = division ? divisionSkillLevels[division] : req.body?.skillLevel;
   if (applicantName.length < 2 || applicantName.length > 80 || !["BEGINNER", "AVERAGE", "ADVANCE"].includes(skillLevel)) {
     return res.status(400).json({ error: "Name and valid skill level are required." });
   }
   if (!post.tournamentId) return res.status(400).json({ error: "This post is not linked to a tournament yet." });
+  const paymentMethods = Array.isArray(post.paymentMethods) ? post.paymentMethods as string[] : ["IN_PERSON"];
+  if (divisions.length > 0 && !divisions.some((eventDivision) => eventDivision.name === division)) {
+    return res.status(400).json({ error: "Choose one of the divisions offered for this event." });
+  }
+  if (!paymentMethods.includes(paymentMethod)) {
+    return res.status(400).json({ error: "Choose a payment method offered for this event." });
+  }
 
   for (const field of fields) {
     if (field.required && !String(answers[field.label] ?? "").trim()) {
@@ -352,17 +487,25 @@ postsRouter.post("/:id/register", attachUser, requireAuth, async (req: AuthedReq
       where: { postId: post.id, status: { in: ["PENDING", "APPROVED"] } },
     });
     if ((!existing || existing.status === "REJECTED") && post.capacity !== null && activeCount >= post.capacity) return { kind: "full" as const };
+    const selectedDivision = divisions.find((eventDivision) => eventDivision.name === division);
+    if (selectedDivision && (!existing || existing.status === "REJECTED" || existing.division !== division)) {
+      const divisionCount = await tx.registrationSubmission.count({
+        where: { postId: post.id, division, status: { in: ["PENDING", "APPROVED"] } },
+      });
+      if (divisionCount >= selectedDivision.capacity) return { kind: "division-full" as const };
+    }
 
     const submission = await tx.registrationSubmission.upsert({
       where: { postId_userId: { postId: post.id, userId: req.userId! } },
-      update: { answers, applicantName, skillLevel, contact, ...(existing?.status === "REJECTED" ? { status: "PENDING" as const } : {}) },
-      create: { postId: post.id, userId: req.userId!, answers, applicantName, skillLevel, contact },
+      update: { answers, applicantName, skillLevel, contact, division, paymentMethod, ...(existing?.status === "REJECTED" ? { status: "PENDING" as const } : {}) },
+      create: { postId: post.id, userId: req.userId!, answers, applicantName, skillLevel, contact, division, paymentMethod },
     });
     return { kind: "submitted" as const, submission };
   });
 
   if (registration.kind === "already-approved") return res.status(409).json({ error: "You are already confirmed for this event." });
   if (registration.kind === "full") return res.status(409).json({ error: "This event has no open spots remaining." });
+  if (registration.kind === "division-full") return res.status(409).json({ error: "That division is full. Choose another division if places are available." });
   const { submission } = registration;
 
   res.status(201).json({ ok: true, submittedAt: submission.submittedAt });
@@ -444,5 +587,13 @@ async function unlinkPaymentProof(storedFile: string) {
     await fs.unlink(path.join(path.dirname(TOURNAMENT_PHOTO_DIR), "payments", storedFile));
   } catch (err: any) {
     if (err?.code !== "ENOENT") console.error("Failed to delete payment proof:", err);
+  }
+}
+
+async function unlinkPaymentQr(storedFile: string) {
+  try {
+    await fs.unlink(path.join(PAYMENT_QR_DIR, storedFile));
+  } catch (err: any) {
+    if (err?.code !== "ENOENT") console.error("Failed to delete event payment QR:", err);
   }
 }
