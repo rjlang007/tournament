@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, fileUrl, PostSummary } from "../../lib/api";
+import { useAuth } from "../../context/AuthContext";
 
 export default function Feed() {
+  const { user } = useAuth();
   const [posts, setPosts] = useState<PostSummary[] | null>(null);
   const [note, setNote] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
@@ -23,12 +25,15 @@ export default function Feed() {
     <div>
       <div className="flex items-center justify-between mb-4">
         <h1 className="font-display text-2xl font-bold text-white">Tournaments</h1>
-        <Link
-          to="/community/new"
-          className="rounded-lg bg-ball text-neutral-900 font-display font-semibold px-4 py-2"
-        >
-          + Post a tournament
-        </Link>
+        {user ? (
+          <Link to="/community/new" className="rounded-lg bg-ball text-neutral-900 font-display font-semibold px-4 py-2">
+            + Post an event
+          </Link>
+        ) : (
+          <Link to="/community/register" state={{ role: "ADMIN" }} className="rounded-lg bg-ball text-neutral-900 font-display font-semibold px-4 py-2">
+            Host an event
+          </Link>
+        )}
       </div>
       <div className="mb-6 grid gap-3 sm:grid-cols-2"><input className="field" placeholder="Search tournaments" value={search} onChange={(e) => setSearch(e.target.value)} /><input className="field" placeholder="Filter by location" value={location} onChange={(e) => setLocation(e.target.value)} /></div>
       {note && <p className="text-xs text-white/40 mb-6">{note}</p>}

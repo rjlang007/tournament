@@ -5,7 +5,7 @@ type AuthState = {
   user: PublicProfile | null;
   loading: boolean;
   error: string | null;
-  register: (username: string, password: string) => Promise<boolean>;
+  register: (username: string, password: string, role: "ADMIN" | "PLAYER") => Promise<boolean>;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   refresh: () => Promise<void>;
@@ -38,10 +38,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     refresh();
   }, [refresh]);
 
-  const register = useCallback(async (username: string, password: string) => {
+  const register = useCallback(async (username: string, password: string, role: "ADMIN" | "PLAYER") => {
     setError(null);
     try {
-      const { data } = await api.post<PublicProfile>("/auth/register", { username, password });
+      const { data } = await api.post<PublicProfile>("/auth/register", { username, password, role });
       setUser(data);
       return true;
     } catch (err) {

@@ -21,6 +21,7 @@ const USERNAME_RE = /^[a-zA-Z0-9_]{3,20}$/;
 const registerSchema = z.object({
   username: z.string().regex(USERNAME_RE, "3-20 characters: letters, numbers, underscore only."),
   password: z.string().min(8, "Password must be at least 8 characters."),
+  role: z.enum(["ADMIN", "PLAYER"]).default("PLAYER"),
 });
 
 authRouter.post("/register", async (req, res) => {
@@ -28,7 +29,7 @@ authRouter.post("/register", async (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
-  const { username, password } = parsed.data;
+  const { username, password, role } = parsed.data;
 
   const existing = await prisma.user.findUnique({ where: { username } });
   if (existing) {
@@ -42,7 +43,12 @@ authRouter.post("/register", async (req, res) => {
       username,
       passwordHash,
       defaultAvatarKey: randomDefaultAvatarKey(),
-      role: accountCount === 0 ? "SUPERADMIN" : "PLAYER",
+      role: accountCount === 0 ? "SUPERADMIN" : role,
+      ...(accountCount > 0 && role === "ADMIN" ? {
+        trialStartedAt: new Date(),
+        subscriptionExpiresAt: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
+        subscriptionStatus: "TRIAL" as const,
+      } : {}),
     },
   });
 

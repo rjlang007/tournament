@@ -1,8 +1,10 @@
 import { useEffect, useState, FormEvent } from "react";
 import { useNavigate, useParams, Link } from "react-router-dom";
 import { API_URL, api, fileUrl, PostDetail as PostDetailType } from "../../lib/api";
+import { useAuth } from "../../context/AuthContext";
 
 export default function PostDetail() {
+  const { user } = useAuth();
   const { postId } = useParams();
   const navigate = useNavigate();
   const [post, setPost] = useState<PostDetailType | null>(null);
@@ -177,7 +179,17 @@ export default function PostDetail() {
         </a>
       )}
 
-      {post.registrationFields.length > 0 && (
+      {!user && (post.tournamentId || post.registrationFields.length > 0) && (
+        <div className="mb-6 rounded-xl border border-white/10 p-4">
+          <p className="mb-3 text-sm text-white/70">Create a player account or sign in to register for this event.</p>
+          <div className="flex gap-3">
+            <Link to="/community/register" state={{ from: `/community/${post.id}` }} className="rounded-lg bg-ball px-4 py-2 font-display font-semibold text-neutral-900">Create account</Link>
+            <Link to="/community/login" state={{ from: `/community/${post.id}` }} className="rounded-lg border border-white/20 px-4 py-2 text-sm text-white">Sign in</Link>
+          </div>
+        </div>
+      )}
+
+      {user && post.registrationFields.length > 0 && (
         <div className="rounded-xl border border-white/10 p-4">
           <h3 className="font-display font-semibold text-white mb-3">Register for this tournament</h3>
           <form onSubmit={onRegister} className="space-y-3">
@@ -217,12 +229,13 @@ export default function PostDetail() {
         </div>
       )}
 
-      {post.tournamentId && <div className="mt-4 rounded-xl border border-white/10 p-4">
-        <h3 className="font-display font-semibold text-white mb-3">Request entry and submit payment proof</h3>
+      {user && post.tournamentId && <div className="mt-4 rounded-xl border border-white/10 p-4">
+        <h3 className="font-display font-semibold text-white mb-1">Request entry</h3>
+        <p className="mb-3 text-xs text-white/50">Follow the payment instructions in the event details. Upload a receipt if you paid electronically; the organizer can also verify in-person payment.</p>
         <form onSubmit={onRegister} className="space-y-3">
           <input className="w-full rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-white" placeholder="Your full name" value={applicantName} onChange={(e) => setApplicantName(e.target.value)} required />
           <div className="grid grid-cols-2 gap-3"><select className="rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-white" value={skillLevel} onChange={(e) => setSkillLevel(e.target.value as typeof skillLevel)}><option value="BEGINNER">Beginner</option><option value="AVERAGE">Average</option><option value="ADVANCE">Advanced</option></select><input className="rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-white" placeholder="Contact" value={contact} onChange={(e) => setContact(e.target.value)} /></div>
-          <input type="file" accept="image/*" onChange={(e) => setPaymentProof(e.target.files?.[0] ?? null)} required={!post.myRegistration?.hasPaymentProof} className="text-sm text-white/70" />
+          <input type="file" accept="image/*" onChange={(e) => setPaymentProof(e.target.files?.[0] ?? null)} className="text-sm text-white/70" />
           {post.myRegistration && <p className="text-xs text-white/50">Request status: {post.myRegistration.status}</p>}
           {registerMsg && <p className="text-sm text-white/70">{registerMsg}</p>}
           <button type="submit" disabled={registering} className="rounded-lg bg-ball text-neutral-900 font-display font-semibold px-4 py-2 disabled:opacity-50">{registering ? "Submitting…" : "Submit request"}</button>

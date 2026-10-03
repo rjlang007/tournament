@@ -50,7 +50,7 @@ function hostSummary(user: { id: string; username: string; avatarUrl: string | n
 // always show it, per how the photos are actually handled server-side.
 const PHOTO_POLICY_NOTE = `Tournament photos are automatically deleted ${PHOTO_LIFETIME_DAYS} days after upload. Profile pictures are not affected.`;
 
-postsRouter.get("/", attachUser, requireAuth, async (_req, res) => {
+postsRouter.get("/", attachUser, async (_req, res) => {
   const { search, location, amount } = _req.query as { search?: string; location?: string; amount?: string };
   const posts = await prisma.tournamentPost.findMany({
     where: {
@@ -83,7 +83,7 @@ postsRouter.get("/", attachUser, requireAuth, async (_req, res) => {
   });
 });
 
-postsRouter.get("/:id", attachUser, requireAuth, async (req: AuthedRequest, res) => {
+postsRouter.get("/:id", attachUser, async (req: AuthedRequest, res) => {
   const post = await prisma.tournamentPost.findUnique({
     where: { id: req.params.id },
     include: {
@@ -94,9 +94,11 @@ postsRouter.get("/:id", attachUser, requireAuth, async (req: AuthedRequest, res)
   });
   if (!post) return res.status(404).json({ error: "Tournament post not found." });
 
-  const mySubmission = await prisma.registrationSubmission.findUnique({
-    where: { postId_userId: { postId: post.id, userId: req.userId! } },
-  });
+  const mySubmission = req.userId
+    ? await prisma.registrationSubmission.findUnique({
+      where: { postId_userId: { postId: post.id, userId: req.userId } },
+    })
+    : null;
 
   res.json({
     photoPolicyNote: PHOTO_POLICY_NOTE,

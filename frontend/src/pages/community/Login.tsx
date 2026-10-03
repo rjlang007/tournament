@@ -1,22 +1,25 @@
 import { useState, FormEvent } from "react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 
 export default function Login() {
   const { user, login, error } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const from = (location.state as { from?: string } | null)?.from;
+  const destination = from?.startsWith("/community/") ? from : "/community";
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
-  if (user) return <Navigate to="/community" replace />;
+  if (user) return <Navigate to={destination} replace />;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setSubmitting(true);
     const ok = await login(username.trim(), password);
     setSubmitting(false);
-    if (ok) navigate("/community");
+    if (ok) navigate(destination);
   }
 
   return (
@@ -54,7 +57,7 @@ export default function Login() {
       </form>
       <p className="text-sm text-white/60 mt-4">
         No account yet?{" "}
-        <Link to="/community/register" className="text-ball hover:underline">
+        <Link to="/community/register" state={{ from: destination }} className="text-ball hover:underline">
           Create one
         </Link>
       </p>

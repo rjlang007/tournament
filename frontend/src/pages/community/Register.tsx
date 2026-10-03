@@ -1,17 +1,21 @@
 import { useState, FormEvent } from "react";
-import { Link, Navigate, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 
 export default function Register() {
   const { user, register, error } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const routeState = location.state as { from?: string; role?: "ADMIN" | "PLAYER" } | null;
+  const destination = routeState?.from?.startsWith("/community/") ? routeState.from : "/community";
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [role, setRole] = useState<"ADMIN" | "PLAYER">(routeState?.role === "ADMIN" ? "ADMIN" : "PLAYER");
   const [localError, setLocalError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  if (user) return <Navigate to="/community" replace />;
+  if (user) return <Navigate to={destination} replace />;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -21,17 +25,16 @@ export default function Register() {
       return;
     }
     setSubmitting(true);
-    const ok = await register(username.trim(), password);
+    const ok = await register(username.trim(), password, role);
     setSubmitting(false);
-    if (ok) navigate("/community");
+    if (ok) navigate(destination);
   }
 
   return (
     <div className="max-w-sm mx-auto mt-16 px-4">
       <h1 className="font-display text-2xl font-bold text-white mb-2">Create your account</h1>
       <p className="text-sm text-white/60 mb-6">
-        Your account is private to you - only you can sign in to it. Everyone can see your profile
-        picture and description once you're signed in.
+        Join events as a player, or create an organizer account to publish and manage your events.
       </p>
       <form onSubmit={onSubmit} className="space-y-4">
         <div>
@@ -57,6 +60,18 @@ export default function Register() {
           />
         </div>
         <div>
+          <label className="block text-sm text-white/70 mb-1">Account type</label>
+          <select
+            className="w-full rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-white outline-none focus:border-ball"
+            value={role}
+            onChange={(e) => setRole(e.target.value as "ADMIN" | "PLAYER")}
+          >
+            <option value="PLAYER">Player</option>
+            <option value="ADMIN">Organizer</option>
+          </select>
+          {role === "ADMIN" && <p className="mt-1 text-xs text-white/50">Organizer accounts include a 15-day free trial.</p>}
+        </div>
+        <div>
           <label className="block text-sm text-white/70 mb-1">Confirm password</label>
           <input
             type="password"
@@ -77,7 +92,7 @@ export default function Register() {
       </form>
       <p className="text-sm text-white/60 mt-4">
         Already have an account?{" "}
-        <Link to="/community/login" className="text-ball hover:underline">
+        <Link to="/community/login" state={{ from: destination }} className="text-ball hover:underline">
           Sign in
         </Link>
       </p>
