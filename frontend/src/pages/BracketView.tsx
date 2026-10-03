@@ -15,10 +15,17 @@ type BracketMatch = {
   entryAId?: string | null;
   entryBId?: string | null;
   winnerEntryId?: string | null;
-  game?: { id: string; status: string; courtId?: string | null } | null;
+  game?: {
+    id: string;
+    status: string;
+    courtId?: string | null;
+    winningTeam?: "A" | "B" | null;
+    scoreA?: number | null;
+    scoreB?: number | null;
+  } | null;
 };
 
-type Court = { id: string; label: string; isEnabled: boolean };
+type Court = { id: string; label: string; isEnabled: boolean; games?: { id: string; status: string }[] };
 
 type Entry = { id: string; playerAId: string; playerBId?: string | null; teamName?: string | null };
 type StandingRow = { entryId: string; name: string; wins: number; losses: number; played: number };
@@ -40,19 +47,19 @@ export default function BracketView() {
   const [entries, setEntries] = useState<Entry[]>([]);
   const [matches, setMatches] = useState<BracketMatch[]>([]);
   const [standings, setStandings] = useState<StandingRow[]>([]);
-  const [participantCount, setParticipantCount] = useState<number>(8);
+  const [generatedPlayerCount, setGeneratedPlayerCount] = useState<number | null>(null);
   const [draggedPlayerId, setDraggedPlayerId] = useState<string | null>(null);
-  const [rrPool, setRrPool] = useState<string[]>([]); // player ids picked for round robin
 
   useEffect(() => {
     api.get("/players", { params: { tournamentId } }).then((r) => setPlayers(r.data));
     api.get("/courts", { params: { tournamentId } }).then((r) => setCourts(r.data));
+    api.get(`/brackets/for-tournament/${tournamentId}`).then(({ data }) => {
+      if (data) {
+        setBracketId(data.id);
+        setFormat(data.format);
+      }
+    });
   }, [tournamentId]);
-
-  useEffect(() => {
-    const active = players.filter((p) => p.status !== "LEFT").length;
-    if (active > 0) setParticipantCount(active);
-  }, [players]);
 
   const loadMatches = () => {
     if (!bracketId) return;
@@ -63,6 +70,7 @@ export default function BracketView() {
   useTournamentSocket(tournamentId, ["bracket:generated", "games:changed", "players:changed"], () => {
     loadMatches();
     api.get("/players", { params: { tournamentId } }).then((r) => setPlayers(r.data));
+    api.get("/courts", { params: { tournamentId } }).then((r) => setCourts(r.data));
   });
   useEffect(loadMatches, [bracketId]);
 
@@ -74,7 +82,8 @@ export default function BracketView() {
   const autoGenerate = async () => {
     if (!bracketId) return;
     if (matches.length > 0 && !window.confirm("This replaces the current bracket and clears any slots you've already filled. Continue?")) return;
-    await api.post(`/brackets/${bracketId}/auto-generate`, { participantCount, format });
+    const { data } = await api.post(`/brackets/${bracketId}/auto-generate`, { format });
+    setGeneratedPlayerCount(data.participantCount);
     loadMatches();
   };
 
@@ -107,12 +116,6 @@ export default function BracketView() {
     loadMatches();
   };
 
-  const generateRoundRobin = async () => {
-    if (!bracketId || rrPool.length < 2) return;
-    await api.post(`/brackets/${bracketId}/round-robin`, { playerIds: rrPool });
-    loadMatches();
-  };
-
   const addPartner = async (entryId: string, playerId: string) => {
     await api.patch(`/brackets/entries/${entryId}/substitute`, { slot: "B", newPlayerId: playerId });
     loadMatches();
@@ -132,13 +135,14 @@ export default function BracketView() {
       ids.add(e.playerAId);
       if (e.playerBId) ids.add(e.playerBId);
     });
-    rrPool.forEach((id) => ids.add(id));
     return ids;
-  }, [entries, rrPool]);
+  }, [entries]);
 
   const winners = matches.filter((m) => m.bracketSide === "WINNERS");
   const losers = matches.filter((m) => m.bracketSide === "LOSERS");
   const grandFinal = matches.find((m) => m.bracketSide === "GRAND_FINAL");
+  const hasBracketGames = matches.some((match) => match.game);
+  const availableCourts = courts.filter((court) => court.isEnabled && !court.games?.length);
   const winnersRounds = Array.from(new Set(winners.map((m) => m.round))).sort((a, b) => a - b);
   const losersRounds = Array.from(new Set(losers.map((m) => m.round))).sort((a, b) => a - b);
   const rrRounds = Array.from(new Set(matches.filter((m) => m.bracketSide === "ROUND_ROBIN").map((m) => m.round))).sort(
@@ -205,12 +209,21 @@ export default function BracketView() {
 
   const renderMatchAction = (match: BracketMatch) => {
     if (!match.entryAId || !match.entryBId) return null; // slots not both filled yet
+
+    if (match.game?.status === "FINISHED") {
+      const winnerId = match.game.winningTeam === "A" ? match.entryAId : match.entryBId;
+      return (
+        <div className="mt-2 pt-2 border-t border-white/10 text-[11px] text-white/60">
+          Final: {match.game.scoreA}-{match.game.scoreB} · {entryLabel(winnerId)} won
+        </div>
+      );
+    }
     if (match.winnerEntryId) return null; // already decided
 
-    if (match.game) {
+    if (match.game && match.game.status !== "CANCELLED") {
       return (
         <div className="mt-2 pt-2 border-t border-white/10 text-[11px] text-white/50 flex items-center justify-between">
-          <span>{match.game.status === "IN_PROGRESS" ? "In progress" : "On court"}</span>
+          <span>{match.game.status === "IN_PROGRESS" ? "In progress" : match.game.status === "PAUSED" ? "Paused" : "Ready to start"}</span>
           <a href={`/t/${tournamentId}/courts`} className="text-ball hover:underline">Go to Court Control →</a>
         </div>
       );
@@ -225,12 +238,15 @@ export default function BracketView() {
           onChange={(e) => e.target.value && startGame(match.id, e.target.value)}
           className="w-full text-[11px] bg-white/5 border border-white/10 rounded px-2 py-1"
         >
-          <option value="" disabled>Start on court…</option>
-          {courts.filter((c) => c.isEnabled).map((c) => (
-            <option key={c.id} value={c.id}>{c.label}</option>
+          <option value="" disabled>{match.game?.status === "CANCELLED" ? "Restart on court…" : "Start on court…"}</option>
+          {courts.filter((court) => court.isEnabled).map((court) => (
+            <option key={court.id} value={court.id} disabled={Boolean(court.games?.length)}>
+              {court.label}{court.games?.length ? " (in use)" : ""}
+            </option>
           ))}
         </select>
-        {courts.length === 0 && <div className="text-[10px] text-white/30 mt-1">Add a court first (Court Control page).</div>}
+        {availableCourts.length === 0 && <div className="text-[10px] text-white/30 mt-1">No available courts. Enable a free court in Court Control.</div>}
+        {match.game?.status === "CANCELLED" && <div className="text-[10px] text-white/40 mt-1">The cancelled match can be restarted.</div>}
       </div>
     );
   };
@@ -265,32 +281,25 @@ export default function BracketView() {
         </div>
       )}
 
+      {bracketId && canEdit && (
+        <div className="mb-6 flex flex-wrap items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-4">
+          <button onClick={autoGenerate} disabled={hasBracketGames} className="action-button w-full sm:w-auto disabled:opacity-40">
+            Generate {FORMAT_LABELS[format]} From Registered Players
+          </button>
+          {generatedPlayerCount !== null && <span className="text-sm text-white/70">Generated for {generatedPlayerCount} players.</span>}
+          {format !== "ROUND_ROBIN" && matches.length > 0 && (
+            <button onClick={lockByes} className="secondary-button w-full text-sm sm:ml-auto sm:w-auto">
+              Lock Byes / Advance
+            </button>
+          )}
+          <span className="text-xs text-white/40 w-full">
+            Uses every approved player who has not left. Regenerate before any games are created; the new schedule replaces the current one.
+          </span>
+        </div>
+      )}
+
       {bracketId && format !== "ROUND_ROBIN" && (
         <>
-          {canEdit && <div className="mb-6 flex flex-wrap items-end gap-3 rounded-xl border border-white/10 bg-white/5 p-4">
-            <div>
-              <label className="text-xs text-white/50">Players/teams in this bracket</label>
-              <input
-                type="number"
-                min={2}
-                value={participantCount}
-                onChange={(e) => setParticipantCount(Number(e.target.value))}
-                className="block bg-white/5 border border-white/10 rounded-lg px-3 py-2 mt-1 w-28"
-              />
-            </div>
-            <button onClick={autoGenerate} className="action-button w-full sm:w-auto">
-              Auto-Generate Bracket
-            </button>
-            {matches.length > 0 && (
-              <button onClick={lockByes} className="secondary-button w-full text-sm sm:ml-auto sm:w-auto">
-                Lock Byes / Advance
-              </button>
-            )}
-            <span className="text-xs text-white/40 w-full">
-              Builds the right bracket size (with byes) for the count above. Then drag a name from the roster below onto a
-              slot, or type it and press Enter.
-            </span>
-          </div>}
 
           <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-6">
             <div className="bg-white/5 border border-white/10 rounded-xl p-3 h-fit">
@@ -390,74 +399,18 @@ export default function BracketView() {
       {bracketId && format === "ROUND_ROBIN" && (
         <div className="grid grid-cols-1 md:grid-cols-[200px_1fr] gap-6">
           <div className="bg-white/5 border border-white/10 rounded-xl p-3 h-fit">
-            <div className="text-xs uppercase text-white/40 mb-2">Full Player List</div>
+            <div className="text-xs uppercase text-white/40 mb-2">Registered Players</div>
             <ul className="flex flex-col gap-1">
               {players.map((p) => (
-                <li
-                  key={p.id}
-                  draggable={canEdit}
-                  onDragStart={() => canEdit && setDraggedPlayerId(p.id)}
-                  onDragEnd={() => canEdit && setDraggedPlayerId(null)}
-                  className={`text-xs rounded-full px-3 py-1 cursor-grab select-none border ${
-                    rrPool.includes(p.id) ? "bg-white/5 border-white/5 text-white/30" : "bg-white/10 border-white/10 hover:border-ball/50"
-                  }`}
-                >
-                  {p.name}
-                </li>
+                <li key={p.id} className="text-xs rounded-full px-3 py-1 border bg-white/10 border-white/10">{p.name}</li>
               ))}
+              {players.length === 0 && <li className="text-white/30 text-xs">No players registered yet.</li>}
             </ul>
           </div>
 
           <div>
-            {matches.length === 0 && !canEdit ? (
+            {matches.length === 0 ? (
               <div className="rounded-xl border border-dashed border-white/10 bg-white/[0.03] p-4 text-sm text-white/45">The round-robin schedule has not been generated yet.</div>
-            ) : matches.length === 0 ? (
-              <div
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={() => {
-                  if (draggedPlayerId && !rrPool.includes(draggedPlayerId)) setRrPool((prev) => [...prev, draggedPlayerId]);
-                  setDraggedPlayerId(null);
-                }}
-                className="bg-white/5 border border-dashed border-white/20 rounded-xl p-4 mb-4 min-h-[120px]"
-              >
-                <div className="text-xs uppercase text-white/40 mb-2">Round Robin Pool (drag names in, or type below)</div>
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {rrPool.map((id) => (
-                    <span key={id} className="text-xs bg-white/10 border border-white/10 rounded-full px-3 py-1 flex items-center gap-2">
-                      {playerName(id)}
-                      <button onClick={() => setRrPool((prev) => prev.filter((x) => x !== id))} className="text-white/40 hover:text-white/80">×</button>
-                    </span>
-                  ))}
-                  {rrPool.length === 0 && <span className="text-white/30 text-xs">Drop names here…</span>}
-                </div>
-                <input
-                  type="text"
-                  list="bracket-roster-names"
-                  placeholder="Type a name and press Enter…"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm"
-                  onKeyDown={async (e) => {
-                    if (e.key === "Enter" && e.currentTarget.value.trim()) {
-                      const typed = e.currentTarget.value.trim();
-                      const existing = players.find((p) => p.name.toLowerCase() === typed.toLowerCase());
-                      if (existing) {
-                        if (!rrPool.includes(existing.id)) setRrPool((prev) => [...prev, existing.id]);
-                      } else {
-                        const { data } = await api.post("/players", { tournamentId, name: typed, skillLevel: "AVERAGE" });
-                        setPlayers((prev) => [...prev, data]);
-                        setRrPool((prev) => [...prev, data.id]);
-                      }
-                      e.currentTarget.value = "";
-                    }
-                  }}
-                />
-                <button
-                  onClick={generateRoundRobin}
-                  disabled={rrPool.length < 2}
-                  className="mt-3 bg-ball text-neutral-900 font-display font-bold rounded-lg px-4 py-2 disabled:opacity-40"
-                >
-                  Generate Round Robin Schedule
-                </button>
-              </div>
             ) : (
               <>
                 <div className="mb-8 overflow-x-auto">
@@ -472,6 +425,7 @@ export default function BracketView() {
                               <div>{entryLabel(m.entryAId)}</div>
                               <div className="text-white/30 text-center">vs</div>
                               <div>{entryLabel(m.entryBId)}</div>
+                              {renderMatchAction(m)}
                             </div>
                           ))}
                         </div>

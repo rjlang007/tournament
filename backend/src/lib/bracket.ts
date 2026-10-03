@@ -12,6 +12,37 @@ function nextPowerOfTwo(n: number): number {
   return p;
 }
 
+type ByeMatch = {
+  id: string;
+  bracketSide: string;
+  label: string | null;
+  entryAId: string | null;
+  entryBId: string | null;
+  winnerEntryId: string | null;
+  nextMatchId: string | null;
+  nextSlot: string | null;
+  loserNextMatchId: string | null;
+  loserNextSlot: string | null;
+};
+
+export function canAdvanceBye(match: ByeMatch, matches: ByeMatch[]) {
+  if (!(["WINNERS", "LOSERS"].includes(match.bracketSide)) || match.winnerEntryId) return false;
+  if (match.label?.endsWith(" (BYE)")) return false;
+  const filledSlots = [match.entryAId, match.entryBId].filter(Boolean).length;
+  if (filledSlots > 1) return false;
+
+  const missingSlots = filledSlots === 0 ? ["A", "B"] : [match.entryAId ? "B" : "A"];
+  const incomingMatches = matches.filter((source) =>
+    (source.nextMatchId === match.id && missingSlots.includes(source.nextSlot ?? "")) ||
+    (source.loserNextMatchId === match.id && missingSlots.includes(source.loserNextSlot ?? ""))
+  );
+  const incomingPathsResolved = incomingMatches.every((source) =>
+    Boolean(source.winnerEntryId) || Boolean(source.label?.endsWith(" (BYE)"))
+  );
+  if (!incomingPathsResolved) return false;
+  return filledSlots === 1 || (filledSlots === 0 && incomingMatches.length > 0);
+}
+
 /**
  * Looks up a player in this tournament by name (case-insensitive), or
  * creates a new one on the fly. This is what powers "type a name into a
@@ -72,7 +103,9 @@ export async function createBracketShell(bracketId: string, participantCount: nu
           round,
           slot,
           bracketSide: "WINNERS",
-          label: isFinal ? (format === "DOUBLE_ELIMINATION" ? "Winners Final" : "Final") : `Round ${round}`,
+          label: isFinal
+            ? format === "DOUBLE_ELIMINATION" && totalRounds > 1 ? "Winners Final" : "Final"
+            : `Round ${round}`,
         },
       });
       roundIds.push(match.id);
@@ -93,20 +126,8 @@ export async function createBracketShell(bracketId: string, participantCount: nu
     }
   }
 
-  if (format === "DOUBLE_ELIMINATION") {
-    if (totalRounds >= 2) {
-      await buildLosersBracketAndGrandFinal(bracketId, winnersRounds, totalRounds);
-    } else {
-      // Only 2 participants: skip the losers bracket, just add a grand
-      // final fed directly by the sole winners match.
-      const gf = await prisma.bracketMatch.create({
-        data: { bracketId, round: totalRounds + 1, slot: 0, bracketSide: "GRAND_FINAL", label: "Grand Final" },
-      });
-      await prisma.bracketMatch.update({
-        where: { id: winnersRounds[0][0] },
-        data: { nextMatchId: gf.id, nextSlot: "A" },
-      });
-    }
+  if (format === "DOUBLE_ELIMINATION" && totalRounds >= 2) {
+    await buildLosersBracketAndGrandFinal(bracketId, winnersRounds, totalRounds);
   }
 
   return prisma.bracketMatch.findMany({
@@ -236,34 +257,33 @@ export async function clearBracketSlot(matchId: string, slot: "A" | "B") {
 }
 
 /**
- * Once all the round-1/round-robin-eligible slots the operator wants filled
- * are filled, call this to auto-advance any byes: a round-1 winners match
- * with only one slot occupied has no opponent, so that entry advances
- * immediately without a game being played.
+ * Advances any decided byes on both sides of the bracket. A match with one
+ * entry advances only after every match that could feed its open slot is
+ * resolved, preventing premature advancement in the losers bracket.
  */
-export async function lockByes(bracketId: string) {
-  const round1 = await prisma.bracketMatch.findMany({
-    where: { bracketId, bracketSide: "WINNERS", round: 1 },
-  });
-  for (const m of round1) {
-    if (m.winnerEntryId) continue; // already resolved
-    const filled = [m.entryAId, m.entryBId].filter((x): x is string => Boolean(x));
-    if (filled.length === 1) {
-      const winnerId = filled[0];
-      await prisma.bracketMatch.update({
-        where: { id: m.id },
-        data: { winnerEntryId: winnerId, label: `${m.label ?? "Round 1"} (BYE)` },
+export async function lockByes(bracketId: string, db: DatabaseClient = prisma) {
+  let advanced = true;
+  while (advanced) {
+    advanced = false;
+    const matches = await db.bracketMatch.findMany({ where: { bracketId } });
+    for (const match of matches) {
+      if (!canAdvanceBye(match, matches)) continue;
+      const winnerId = match.entryAId ?? match.entryBId;
+      if (!winnerId) continue;
+      await db.bracketMatch.update({
+        where: { id: match.id },
+        data: { winnerEntryId: winnerId, label: `${match.label ?? "Match"} (BYE)` },
       });
-      if (m.nextMatchId && m.nextSlot) {
-        await prisma.bracketMatch.update({
-          where: { id: m.nextMatchId },
-          data: { [m.nextSlot === "A" ? "entryAId" : "entryBId"]: winnerId },
+      if (winnerId && match.nextMatchId && match.nextSlot) {
+        await db.bracketMatch.update({
+          where: { id: match.nextMatchId },
+          data: { [match.nextSlot === "A" ? "entryAId" : "entryBId"]: winnerId },
         });
       }
-      // No opponent existed for this slot, so nothing drops to the losers bracket.
+      advanced = true;
     }
   }
-  return prisma.bracketMatch.findMany({
+  return db.bracketMatch.findMany({
     where: { bracketId },
     orderBy: [{ bracketSide: "asc" }, { round: "asc" }, { slot: "asc" }],
   });
@@ -290,6 +310,7 @@ export async function recordBracketResult(matchId: string, winningEntryId: strin
       data: { [match.loserNextSlot === "A" ? "entryAId" : "entryBId"]: losingEntryId },
     });
   }
+  await lockByes(match.bracketId, db);
 }
 
 /**

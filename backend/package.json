@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
-    "test": "tsx --test src/lib/matchmaking.test.ts",
+    "test": "tsx --test src/lib/matchmaking.test.ts src/lib/bracket.test.ts",
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
