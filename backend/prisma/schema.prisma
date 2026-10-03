@@ -83,6 +83,9 @@ model User {
   trialStartedAt  DateTime?
   subscriptionExpiresAt DateTime?
   subscriptionStatus SubscriptionStatus?
+  subscriptionPaymentProofStoredFile String?
+  subscriptionPaymentSubmittedAt DateTime?
+  subscriptionPaymentStatus RegistrationStatus?
 
   ownedTournaments Tournament[]
   playerProfiles   Player[]
@@ -109,6 +112,7 @@ model Notification {
 model PlatformSetting {
   id                    String   @id @default("platform")
   monthlyPriceCents     Int      @default(0)
+  subscriptionPaymentInstructions String?
   updatedAt             DateTime @updatedAt
 }
 
@@ -119,8 +123,10 @@ model TournamentPost {
   title              String
   description        String
   details            String?
+  paymentInstructions String?
   location           String
   amount             String?
+  capacity           Int?
   registrationLink   String?
   registrationFields Json?
   createdAt          DateTime @default(now())

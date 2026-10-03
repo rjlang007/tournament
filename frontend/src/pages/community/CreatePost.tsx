@@ -1,17 +1,23 @@
 import { useEffect, useState, FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import { api } from "../../lib/api";
-import type { RegistrationField, RegistrationFieldType, Tournament } from "../../lib/api";
+import type { PostDetail, RegistrationField, RegistrationFieldType, Tournament } from "../../lib/api";
 
 const FIELD_TYPES: RegistrationFieldType[] = ["text", "textarea", "number", "email", "phone"];
 
 export default function CreatePost() {
   const navigate = useNavigate();
+  const { postId } = useParams();
+  const isEditing = !!postId;
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [details, setDetails] = useState("");
+  const [paymentInstructions, setPaymentInstructions] = useState("");
   const [location, setLocation] = useState("");
   const [amount, setAmount] = useState("");
+  const [capacity, setCapacity] = useState("");
+  const [scheduledStart, setScheduledStart] = useState("");
+  const [scheduledEnd, setScheduledEnd] = useState("");
   const [registrationLink, setRegistrationLink] = useState("");
   const [fields, setFields] = useState<RegistrationField[]>([]);
   const [photos, setPhotos] = useState<FileList | null>(null);
@@ -19,10 +25,30 @@ export default function CreatePost() {
   const [submitting, setSubmitting] = useState(false);
   const [tournaments, setTournaments] = useState<Tournament[]>([]);
   const [tournamentId, setTournamentId] = useState("");
+  const [tournamentType, setTournamentType] = useState<"RANDOM_PAIRING" | "FIXED_BRACKET">("RANDOM_PAIRING");
+  const [loaded, setLoaded] = useState(!postId);
 
   useEffect(() => {
     api.get<Tournament[]>("/tournaments").then(({ data }) => setTournaments(data.filter((t) => t.status !== "COMPLETED")));
-  }, []);
+    if (postId) {
+      api.get<PostDetail>(`/posts/${postId}`).then(({ data }) => {
+        if (!data.isOwner) throw new Error("Only the event host can edit this event.");
+        setTitle(data.title);
+        setDescription(data.description);
+        setDetails(data.details ?? "");
+        setPaymentInstructions(data.paymentInstructions ?? "");
+        setLocation(data.location);
+        setAmount(data.amount ?? "");
+        setCapacity(data.capacity?.toString() ?? "");
+        setScheduledStart(toLocalDateTime(data.scheduledStart));
+        setScheduledEnd(toLocalDateTime(data.scheduledEnd));
+        setRegistrationLink(data.registrationLink ?? "");
+        setFields(data.registrationFields);
+        setTournamentId(data.tournamentId ?? "");
+      }).catch((err: any) => setError(err?.message || "Could not load this event."))
+        .finally(() => setLoaded(true));
+    }
+  }, [postId]);
 
   function addField() {
     setFields([...fields, { label: "", type: "text", required: false }]);
@@ -40,16 +66,24 @@ export default function CreatePost() {
     setSubmitting(true);
     try {
       const cleanFields = fields.filter((f) => f.label.trim().length > 0);
-      const { data } = await api.post("/posts", {
+      const payload = {
         title,
         description,
-        details: details || undefined,
+        details: isEditing ? details || null : details || undefined,
+        paymentInstructions: isEditing ? paymentInstructions || null : paymentInstructions || undefined,
         location,
-        amount: amount || undefined,
-        registrationLink: registrationLink || undefined,
-        registrationFields: cleanFields.length > 0 ? cleanFields : undefined,
+        amount: isEditing ? amount : amount || undefined,
+        capacity: isEditing ? capacity ? Number(capacity) : null : capacity ? Number(capacity) : undefined,
+        scheduledStart: scheduledStart ? new Date(scheduledStart).toISOString() : isEditing ? null : undefined,
+        scheduledEnd: scheduledEnd ? new Date(scheduledEnd).toISOString() : isEditing ? null : undefined,
+        registrationLink: isEditing ? registrationLink : registrationLink || undefined,
+        registrationFields: isEditing ? cleanFields : cleanFields.length > 0 ? cleanFields : undefined,
         tournamentId: tournamentId || undefined,
-      });
+        tournamentType,
+      };
+      const { data } = isEditing
+        ? await api.patch(`/posts/${postId}`, payload)
+        : await api.post("/posts", payload);
 
       if (photos && photos.length > 0) {
         const form = new FormData();
@@ -72,8 +106,8 @@ export default function CreatePost() {
 
   return (
     <div className="max-w-2xl">
-      <h1 className="font-display text-2xl font-bold text-white mb-6">Post a tournament</h1>
-      <form onSubmit={onSubmit} className="space-y-5">
+      <h1 className="font-display text-2xl font-bold text-white mb-6">{isEditing ? "Edit event" : "Publish an event"}</h1>
+      {!loaded ? <p className="text-sm text-white/60">Loading event…</p> : <form onSubmit={onSubmit} className="space-y-5">
         <div>
           <label className="block text-sm text-white/70 mb-1">Title</label>
           <input className={inputClass} value={title} onChange={(e) => setTitle(e.target.value)} required />
@@ -92,28 +126,47 @@ export default function CreatePost() {
           <label className="block text-sm text-white/70 mb-1">Details (format, rules, schedule, etc.)</label>
           <textarea className={inputClass} rows={4} value={details} onChange={(e) => setDetails(e.target.value)} />
         </div>
+        <div>
+          <label className="block text-sm text-white/70 mb-1">Payment instructions</label>
+          <textarea className={inputClass} rows={3} value={paymentInstructions} onChange={(e) => setPaymentInstructions(e.target.value)} placeholder="Bank transfer, mobile wallet, or pay-at-venue instructions" />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div><label className="block text-sm text-white/70 mb-1">Starts</label><input className={inputClass} type="datetime-local" value={scheduledStart} onChange={(e) => setScheduledStart(e.target.value)} required={!isEditing} /></div>
+          <div><label className="block text-sm text-white/70 mb-1">Ends (optional)</label><input className={inputClass} type="datetime-local" value={scheduledEnd} onChange={(e) => setScheduledEnd(e.target.value)} /></div>
+        </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm text-white/70 mb-1">Location</label>
             <input className={inputClass} value={location} onChange={(e) => setLocation(e.target.value)} required />
           </div>
           <div>
-            <label className="block text-sm text-white/70 mb-1">Entry fee / prize (optional)</label>
+            <label className="block text-sm text-white/70 mb-1">Entry fee or prize (optional)</label>
             <input
               className={inputClass}
-              placeholder="e.g. $20 or Free"
+              placeholder="e.g. 20 per player or Free"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
             />
           </div>
+          <div>
+            <label className="block text-sm text-white/70 mb-1">Player capacity (optional)</label>
+            <input className={inputClass} type="number" min="1" max="1000" step="1" value={capacity} onChange={(e) => setCapacity(e.target.value)} />
+          </div>
         </div>
-        <div>
-          <label className="block text-sm text-white/70 mb-1">Link to your tournament (required for in-app payment approval)</label>
+        {!isEditing && <div>
+          <label className="block text-sm text-white/70 mb-1">Existing tournament (optional)</label>
           <select className={inputClass} value={tournamentId} onChange={(e) => setTournamentId(e.target.value)}>
-            <option value="">Select a tournament</option>
+            <option value="">Create a new event tournament</option>
             {tournaments.map((tournament) => <option key={tournament.id} value={tournament.id}>{tournament.name}</option>)}
           </select>
-        </div>
+        </div>}
+        {!isEditing && !tournamentId && <div>
+          <label className="block text-sm text-white/70 mb-1">Event format</label>
+          <select className={inputClass} value={tournamentType} onChange={(e) => setTournamentType(e.target.value as typeof tournamentType)}>
+            <option value="RANDOM_PAIRING">Open play / random pairing</option>
+            <option value="FIXED_BRACKET">Fixed bracket tournament</option>
+          </select>
+        </div>}
         <div>
           <label className="block text-sm text-white/70 mb-1">External registration link (optional)</label>
           <input
@@ -188,9 +241,15 @@ export default function CreatePost() {
           disabled={submitting}
           className="rounded-lg bg-ball text-neutral-900 font-display font-semibold px-6 py-2 disabled:opacity-50"
         >
-          {submitting ? "Posting…" : "Post tournament"}
+          {submitting ? (isEditing ? "Saving…" : "Publishing…") : isEditing ? "Save changes" : "Publish event"}
         </button>
-      </form>
+      </form>}
     </div>
   );
+}
+
+function toLocalDateTime(value?: string | null) {
+  if (!value) return "";
+  const date = new Date(value);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 }

@@ -53,12 +53,9 @@ authRouter.post("/register", async (req, res) => {
   });
 
   const currentUser = await refreshSubscriptionStatus(user);
-  if (currentUser.role === "ADMIN" && currentUser.subscriptionStatus === "SUSPENDED") {
-    return res.status(402).json({ error: "Your administrator subscription has expired.", subscriptionExpired: true, expiresAt: currentUser.subscriptionExpiresAt });
-  }
   const token = signSession(user.id);
   setSessionCookie(res, token);
-  res.status(201).json(publicUser(user));
+  res.status(201).json(publicUser({ ...user, subscriptionExpiresAt: currentUser.subscriptionExpiresAt, subscriptionStatus: currentUser.subscriptionStatus }));
 });
 
 const loginSchema = z.object({
@@ -83,12 +80,9 @@ authRouter.post("/login", async (req, res) => {
   }
 
   const currentUser = await refreshSubscriptionStatus(user);
-  if (currentUser.role === "ADMIN" && currentUser.subscriptionStatus === "SUSPENDED") {
-    return res.status(402).json({ error: "Your administrator subscription has expired.", subscriptionExpired: true, expiresAt: currentUser.subscriptionExpiresAt });
-  }
   const token = signSession(user.id);
   setSessionCookie(res, token);
-  res.json(publicUser(user));
+  res.json(publicUser({ ...user, subscriptionExpiresAt: currentUser.subscriptionExpiresAt, subscriptionStatus: currentUser.subscriptionStatus }));
 });
 
 authRouter.post("/logout", (_req, res) => {
@@ -99,7 +93,8 @@ authRouter.post("/logout", (_req, res) => {
 authRouter.get("/me", attachUser, requireAuth, async (req: AuthedRequest, res) => {
   const user = await prisma.user.findUnique({ where: { id: req.userId } });
   if (!user) return res.status(404).json({ error: "Account not found." });
-  res.json(publicUser(user));
+  const currentUser = await refreshSubscriptionStatus(user);
+  res.json(publicUser({ ...user, subscriptionExpiresAt: currentUser.subscriptionExpiresAt, subscriptionStatus: currentUser.subscriptionStatus }));
 });
 
 // Shared shape returned for "me" / own account. Public profile viewing

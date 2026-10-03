@@ -48,6 +48,9 @@ export type PostSummary = {
   description: string;
   location: string;
   amount?: string | null;
+  capacity?: number | null;
+  scheduledStart?: string | null;
+  scheduledEnd?: string | null;
   createdAt: string;
   host: PostHost;
   photos: string[];
@@ -60,8 +63,12 @@ export type PostDetail = {
   title: string;
   description: string;
   details?: string | null;
+  paymentInstructions?: string | null;
   location: string;
   amount?: string | null;
+  capacity?: number | null;
+  scheduledStart?: string | null;
+  scheduledEnd?: string | null;
   registrationLink?: string | null;
   registrationFields: RegistrationField[];
   createdAt: string;

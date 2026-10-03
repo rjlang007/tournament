@@ -1,16 +1,20 @@
-# Falcon Flick Zone — Pickleball Tournament System
+# Falcon Flick Zone — Pickleball Event Marketplace
 
-A focused tournament management system for a single venue, with administrator
-accounts, player accounts, community features, live matchmaking, and results.
+A marketplace for pickleball organizers to publish tournaments and open play,
+and for players to discover events, request a place, and follow live play.
 
-- **Admin/staff side** (Registration, Court Control, Tournament Setup, Bracket):
-  requires an authenticated administrator account. Admins manage their own
-  tournaments; superadmins can manage all tournaments.
-- **Player/customer side** (Kiosk, Leaderboard): read-only public views. Anyone
-  can look at who's playing next, who's currently on court, final results, and
-  the leaderboard. Players need an account only when joining a tournament.
+- **Organizer side** (event publishing, Registration, Court Control, Tournament
+  Setup, Bracket): requires an organizer account. Organizers manage their own
+  events and tournaments; platform superadmins manage the service.
+- **Player side**: anyone can browse event listings. Players need an account to
+  request a place, upload payment proof, or manage their registrations.
 
 ## What it does
+- Public event discovery with search, schedule, location, capacity, and payment instructions
+- Self-service player and organizer accounts; a player can start an organizer trial on the same account
+- In-app registration requests, payment-proof uploads, organizer review, and pending-request withdrawal
+- Capacity limits reserve places for pending and confirmed requests
+- Publishing an event creates and links an open-play or bracket tournament for court operations
 - Player registration with skill levels (Beginner / Average / Advance)
 - Random-pairing matchmaking that enforces balanced doubles skill matchups
 - "Bunot-bunot" / spin-the-wheel draw animation for random pairings
@@ -51,9 +55,9 @@ npm install
 npm run dev                          # http://localhost:5173
 ```
 
-Open `http://localhost:5173`, create a tournament, and you're off. Open the
-Kiosk tab on a second monitor/TV as the public "what's happening now" board —
-that's the screen players/customers look at.
+Open `http://localhost:5173` and browse the Event Board. Create an organizer
+account to publish an event, or a player account to request a place. Organizers
+can open the linked court dashboard to run live play.
 
 ### Backend validation
 ```bash
@@ -105,15 +109,16 @@ same domain.
 ## Who sees what
 | Screen | Who it's for | Needs login? |
 |---|---|---|
-| Tournament Setup / Registration | Admin | Yes |
+| Event Board / Event details | Everyone | No |
+| Publish and manage events | Organizer | Yes |
+| Tournament Setup / Registration | Organizer | Yes |
 | Court Control | Admin/staff | Yes |
 | Bracket | Admin (edit) / anyone (view) | No |
 | Kiosk (Now Playing / Up Next) | Players & customers | No |
 | Leaderboard (wins, games played) | Players & customers | No |
 
-If you want the admin pages locked down with a real login later, that's a
-small, separate addition (a single admin password gate) — happy to add it
-whenever you want, but it's not part of this simplified version.
+Event listings and details are public. Registration, organizer tools, and court
+operations require an authenticated account with the appropriate role.
 
 ## How the skill-pairing rule works
 Implemented in `backend/src/lib/matchmaking.ts` (`isEligibleTeamMatchup`). The
@@ -160,3 +165,9 @@ validly matched this round stays in the queue for the next draw.
   then perform a real restore drill before the event. Keep application logs and
   database backups in separate systems; the server emits JSON request/error
   logs suitable for Railway or another log collector.
+- Event entry payment is currently manual and goes directly to the organizer;
+  organizers publish instructions and review proof or verify in person.
+- Platform revenue is currently a configurable monthly PHP organizer
+  subscription, also verified manually by the platform superadmin. Set the
+  price and payment instructions in the platform console. Online checkout,
+  per-registration platform fees, and automated organizer payouts are not integrated.

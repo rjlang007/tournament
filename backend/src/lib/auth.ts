@@ -19,16 +19,24 @@ export async function refreshSubscriptionStatus(user: {
   subscriptionExpiresAt: Date | null;
   subscriptionStatus: "TRIAL" | "ACTIVE" | "EXPIRED" | "SUSPENDED" | null;
 }) {
-  if (user.role !== "ADMIN" || !user.subscriptionExpiresAt) return user;
-  if (user.subscriptionExpiresAt > new Date() || user.subscriptionStatus === "EXPIRED") {
-    if (user.subscriptionExpiresAt > new Date() && user.subscriptionStatus === "EXPIRED") {
-      const { prisma } = await import("./prisma.js");
+  if (user.role !== "ADMIN") return user;
+  const { prisma } = await import("./prisma.js");
+  const setting = await prisma.platformSetting.findUnique({ where: { id: "platform" }, select: { monthlyPriceCents: true } });
+  const monthlyPriceCents = setting?.monthlyPriceCents ?? Number(process.env.DEFAULT_MONTHLY_PRICE_CENTS || 0);
+  if (monthlyPriceCents <= 0) {
+    if (user.subscriptionStatus === "SUSPENDED" || user.subscriptionStatus === "EXPIRED") {
+      return prisma.user.update({ where: { id: user.id }, data: { subscriptionStatus: "ACTIVE" } });
+    }
+    return user;
+  }
+  if (!user.subscriptionExpiresAt) return user;
+  if (user.subscriptionExpiresAt > new Date()) {
+    if (user.subscriptionStatus === "EXPIRED" || user.subscriptionStatus === "SUSPENDED") {
       return prisma.user.update({ where: { id: user.id }, data: { subscriptionStatus: "ACTIVE" } });
     }
     return user;
   }
   if (user.subscriptionStatus !== "SUSPENDED") {
-    const { prisma } = await import("./prisma.js");
     return prisma.user.update({ where: { id: user.id }, data: { subscriptionStatus: "SUSPENDED" } });
   }
   return user;
@@ -85,12 +93,8 @@ export function requireAuth(req: AuthedRequest, res: Response, next: NextFunctio
     return res.status(401).json({ error: "Not signed in." });
   }
   import("./prisma.js").then(async ({ prisma }) => {
-    const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { id: true, role: true, subscriptionExpiresAt: true, subscriptionStatus: true } });
+    const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { id: true } });
     if (!user) return res.status(401).json({ error: "Account not found." });
-    if (user.role === "ADMIN" && user.subscriptionExpiresAt && user.subscriptionExpiresAt <= new Date()) {
-      if (user.subscriptionStatus !== "SUSPENDED") await prisma.user.update({ where: { id: user.id }, data: { subscriptionStatus: "SUSPENDED" } });
-      return res.status(402).json({ error: "Your administrator subscription has expired.", subscriptionExpired: true, expiresAt: user.subscriptionExpiresAt });
-    }
     next();
   }).catch(next);
 }

@@ -13,6 +13,7 @@ import TournamentLogin from "./pages/TournamentLogin";
 import TournamentLocation from "./pages/TournamentLocation";
 import Register from "./pages/community/Register";
 import PlatformAdmin from "./pages/PlatformAdmin";
+import OrganizerBilling from "./pages/community/OrganizerBilling";
 import Footer from "./components/Footer";
 import Raffle from "./pages/Raffle";
 import CelebrationOverlay from "./components/CelebrationOverlay";
@@ -66,6 +67,7 @@ function Shell() {
           </Link>
 
           <div className="mobile-nav-links flex min-w-0 flex-nowrap items-center gap-1 overflow-x-auto pb-1 sm:flex-wrap sm:gap-2">
+            <NavLink to="/community" className={linkClass}>Event board</NavLink>
             {user && (user.role === "ADMIN" || user.role === "SUPERADMIN") && <NavLink to={`${base}/registration`} className={linkClass}>Registration</NavLink>}
             {user && (user.role === "ADMIN" || user.role === "SUPERADMIN") && <NavLink to={`${base}/courts`} className={linkClass}>Court Control</NavLink>}
             {user && (user.role === "ADMIN" || user.role === "SUPERADMIN") && <NavLink to={`${base}/location`} className={linkClass}>Location</NavLink>}
@@ -111,11 +113,13 @@ export default function App() {
       <Route path="/community" element={<CommunityShell />}>
         <Route index element={<Feed />} />
         <Route path="new" element={<CreatePost />} />
+        <Route path="billing" element={<OrganizerBilling />} />
+        <Route path=":postId/edit" element={<CreatePost />} />
         <Route path=":postId" element={<PostDetail />} />
         <Route path="profile/:username" element={<Profile />} />
         <Route path="members" element={<Members />} />
       </Route>
-      <Route path="/platform" element={user && (user.role === "ADMIN" || user.role === "SUPERADMIN") ? <PlatformAdmin /> : <Navigate to="/" replace />} />
+      <Route path="/platform" element={user?.role === "SUPERADMIN" ? <PlatformAdmin /> : <Navigate to="/" replace />} />
       <Route path="/" element={<TournamentSetup />} />
       <Route path="/t/:tournamentId/*" element={<Shell />} />
       <Route path="*" element={<Navigate to={user ? "/" : "/login"} replace />} />

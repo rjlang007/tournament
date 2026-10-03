@@ -22,7 +22,7 @@ import { rafflesRouter } from "./routes/raffles";
 import { postsRouter } from "./routes/posts";
 import { usersRouter } from "./routes/users";
 import { notificationsRouter } from "./routes/notifications";
-import { attachUser, requireAuth, canManageTournament, AuthedRequest } from "./lib/auth";
+import { attachUser, requireAuth, canManageTournament, refreshSubscriptionStatus, AuthedRequest } from "./lib/auth";
 
 const app = express();
 app.use((req, res, next) => {
@@ -77,9 +77,15 @@ app.post("/api/players/join", attachUser, requireAuth, async (req: AuthedRequest
 async function requireAdminForWrites(req: AuthedRequest, res: express.Response, next: express.NextFunction) {
   if (req.method === "GET") return next();
   if (!req.userId) return res.status(401).json({ error: "Not signed in." });
-  const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { role: true } });
+  const user = await prisma.user.findUnique({ where: { id: req.userId }, select: { role: true, subscriptionExpiresAt: true, subscriptionStatus: true } });
   if (!user || !["SUPERADMIN", "ADMIN"].includes(user.role)) {
     return res.status(403).json({ error: "Administrator access is required." });
+  }
+  if (user.role === "ADMIN") {
+    const subscription = await refreshSubscriptionStatus({ id: req.userId, role: user.role, subscriptionExpiresAt: user.subscriptionExpiresAt, subscriptionStatus: user.subscriptionStatus });
+    if (subscription.subscriptionStatus === "SUSPENDED") {
+      return res.status(402).json({ error: "Organizer subscription expired. Renew your plan to continue.", subscriptionExpired: true, expiresAt: user.subscriptionExpiresAt });
+    }
   }
   req.userRole = user.role;
 

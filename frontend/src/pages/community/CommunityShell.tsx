@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { fileUrl } from "../../lib/api";
@@ -18,15 +18,16 @@ export default function CommunityShell() {
   return (
     <div className="min-h-screen bg-neutral-950">
       <nav className="flex flex-wrap items-center gap-2 border-b border-white/10 bg-court-bg/40 px-4 py-3 sm:px-6 sm:py-4">
-        <span className="mr-2 w-full font-display text-xl font-bold text-ball sm:mr-4 sm:w-auto">🏆 Community Board</span>
+        <Link to="/community" className="mr-2 w-full font-display text-xl font-bold text-ball sm:mr-4 sm:w-auto">🏆 Event Board</Link>
         <NavLink to="/community" end className={linkClass}>
           Browse
         </NavLink>
         {user && (
           <>
-            <NavLink to="/community/new" className={linkClass}>
-              Post a tournament
-            </NavLink>
+            {(user.role === "ADMIN" || user.role === "SUPERADMIN") && <NavLink to="/community/new" className={linkClass}>
+              Post an event
+            </NavLink>}
+            {user.role === "ADMIN" && <NavLink to="/community/billing" className={linkClass}>Subscription</NavLink>}
             <NavLink to="/community/members" className={linkClass}>
               Members
             </NavLink>
@@ -34,6 +35,7 @@ export default function CommunityShell() {
           </>
         )}
         <div className="ml-0 flex w-full items-center gap-2 sm:ml-auto sm:w-auto sm:gap-3">
+          <Link to="/" className="text-sm text-white/60 hover:text-white px-3 py-2">Court dashboard</Link>
           {user ? (
             <>
               <NavLink to={`/community/profile/${user.username}`} className="flex items-center gap-2 text-white/80 hover:text-white">

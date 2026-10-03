@@ -1,0 +1,1 @@
+ALTER TABLE "TournamentPost" ADD COLUMN "paymentInstructions" TEXT;

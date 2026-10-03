@@ -92,10 +92,13 @@ export default function TournamentSetup() {
               <h1 className="brand-lockup mt-2 font-display text-4xl font-bold tracking-tight text-ball sm:text-5xl">PADOL PICKLEBALL COURT</h1>
             </div>
             <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-              {(user?.role === "ADMIN" || user?.role === "SUPERADMIN") && <Link to="/platform" className="secondary-button px-3 py-2 text-xs">Accounts</Link>}
+              <Link to="/community" className="secondary-button px-3 py-2 text-xs">Event board</Link>
+              {user?.role === "SUPERADMIN" && <Link to="/platform" className="secondary-button px-3 py-2 text-xs">Accounts</Link>}
               <Link to="/" aria-label="Go to tournament dashboard" className="flex h-12 w-12 items-center justify-center rounded-2xl bg-ball/20 text-2xl ring-1 ring-ball/20">🏓</Link>
             </div>
           </div>
+
+          {user?.role === "ADMIN" && user.subscriptionStatus === "SUSPENDED" && <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-advance/30 bg-advance/10 px-4 py-3 text-sm text-white/80"><span>Organizer access is paused until renewal is verified.</span><Link to="/community/billing" className="font-semibold text-ball">Renew subscription</Link></div>}
 
           <p className="mb-8 max-w-lg text-sm leading-6 text-white/65">
             Run smooth, professional pickleball tournaments with player registration, live court control, bracket tracking, and leaderboard updates in one modern workspace.
@@ -243,7 +246,7 @@ function PlayerTournamentDirectory({
               <h1 className="mt-2 font-display text-4xl font-bold text-white">Spectate or join a tournament</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/60">Every posted tournament is available to view. Resume a joined tournament or spectate its live courts, leaderboard, and bracket.</p>
             </div>
-            {!canJoin && <Link to="/login" className="action-button shrink-0 px-4 py-2.5">Admin sign in</Link>}
+            <div className="flex gap-2"><Link to="/community" className="secondary-button px-4 py-2.5">Event board</Link>{!canJoin && <Link to="/login" className="action-button shrink-0 px-4 py-2.5">Admin sign in</Link>}</div>
           </div>
           {canJoin && <div className="mt-5 grid max-w-xl gap-4 sm:grid-cols-2"><div><label className="field-label">Name shown in tournament</label><input className="field" value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="Your full name" maxLength={80} required /></div><div><label className="field-label">Your skill level</label><select value={skillLevel} onChange={(event) => setSkillLevel(event.target.value as typeof skillLevel)} className="field"><option value="BEGINNER">Beginner</option><option value="AVERAGE">Average</option><option value="ADVANCE">Advanced</option></select></div></div>}
         </header>
