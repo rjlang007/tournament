@@ -9,6 +9,7 @@ import { uploadTournamentPhotos, uploadPaymentProof, uploadPaymentQr, PAYMENT_QR
 import { defaultAvatarUrl } from "../lib/defaultAvatars";
 import { PHOTO_LIFETIME_DAYS } from "../lib/cleanup";
 import { enqueuePlayer } from "../lib/queue";
+import { calculateCommissionCents } from "../lib/paymongo";
 
 export const postsRouter = Router();
 
@@ -52,9 +53,10 @@ const postSchema = z.object({
   paymentInstructions: z.string().max(3000).nullable().optional(),
   location: z.string().min(1, "Location is required.").max(200),
   amount: z.string().max(80).optional(),
+  entryFeeCents: z.number().int().min(0).max(100000000).nullable().optional(),
   capacity: z.number().int().min(1).max(1000).nullable().optional(),
   divisions: divisionsSchema.default([]),
-  paymentMethods: z.array(z.enum(["QR", "IN_PERSON"])).min(1).max(2).default(["IN_PERSON"]),
+  paymentMethods: z.array(z.enum(["QR", "IN_PERSON", "PAYMONGO"])).min(1).max(3).default(["IN_PERSON"]),
   locationAddress: z.string().max(300).nullable().optional(),
   locationLatitude: z.number().min(-90).max(90).nullable().optional(),
   locationLongitude: z.number().min(-180).max(180).nullable().optional(),
@@ -124,6 +126,7 @@ postsRouter.get("/", attachUser, async (_req, res) => {
       description: p.description,
       location: p.location,
       amount: p.amount,
+      entryFeeCents: p.entryFeeCents,
       capacity: p.capacity,
       divisions: (Array.isArray(p.divisions) ? p.divisions : []).map((division: { name: string; capacity: number }) => ({
         ...division,
@@ -185,6 +188,7 @@ postsRouter.get("/:id", attachUser, async (req: AuthedRequest, res) => {
     paymentInstructions: post.paymentInstructions,
     location: post.location,
     amount: post.amount,
+    entryFeeCents: post.entryFeeCents,
     capacity: post.capacity,
     divisions: (Array.isArray(post.divisions) ? post.divisions as unknown as { name: string; capacity: number }[] : []).map((division) => ({
       ...division,
@@ -213,7 +217,7 @@ postsRouter.get("/:id", attachUser, async (req: AuthedRequest, res) => {
     })),
     registrationCount,
     tournamentId: post.tournamentId,
-    myRegistration: mySubmission ? { id: mySubmission.id, answers: mySubmission.answers, submittedAt: mySubmission.submittedAt, status: mySubmission.status, applicantName: mySubmission.applicantName, skillLevel: mySubmission.skillLevel, hasPaymentProof: !!mySubmission.paymentProofStoredFile, division: mySubmission.division, paymentMethod: mySubmission.paymentMethod } : null,
+    myRegistration: mySubmission ? { id: mySubmission.id, answers: mySubmission.answers, submittedAt: mySubmission.submittedAt, status: mySubmission.status, applicantName: mySubmission.applicantName, skillLevel: mySubmission.skillLevel, hasPaymentProof: !!mySubmission.paymentProofStoredFile, division: mySubmission.division, paymentMethod: mySubmission.paymentMethod, paymentStatus: mySubmission.paymentStatus } : null,
   });
 });
 
@@ -224,6 +228,9 @@ postsRouter.post("/", attachUser, requireAuth, async (req: AuthedRequest, res) =
     return res.status(400).json({ error: parsed.error.issues[0].message });
   }
   const data = parsed.data;
+  if (!(data.entryFeeCents ?? 0) && data.paymentMethods.includes("PAYMONGO")) {
+    return res.status(400).json({ error: "Set an entry fee before enabling online checkout." });
+  }
   const hasLatitude = typeof data.locationLatitude === "number";
   const hasLongitude = typeof data.locationLongitude === "number";
   if (hasLatitude !== hasLongitude) return res.status(400).json({ error: "Choose both map coordinates together." });
@@ -279,6 +286,7 @@ postsRouter.post("/", attachUser, requireAuth, async (req: AuthedRequest, res) =
         paymentInstructions: data.paymentInstructions,
         location: data.location,
         amount: data.amount,
+        entryFeeCents: data.entryFeeCents,
         capacity,
         divisions: data.divisions.length ? data.divisions as Prisma.InputJsonValue : Prisma.DbNull,
         paymentMethods: data.paymentMethods as Prisma.InputJsonValue,
@@ -317,6 +325,11 @@ postsRouter.patch("/:id", attachUser, requireAuth, async (req: AuthedRequest, re
   const scheduledEnd = parsed.data.scheduledEnd === undefined ? undefined : parsed.data.scheduledEnd ? new Date(parsed.data.scheduledEnd) : null;
   const effectiveStart = scheduledStart === undefined ? post.tournament?.scheduledStart ?? null : scheduledStart;
   const effectiveEnd = scheduledEnd === undefined ? post.tournament?.scheduledEnd ?? null : scheduledEnd;
+  const effectiveFee = parsed.data.entryFeeCents === undefined ? post.entryFeeCents ?? 0 : parsed.data.entryFeeCents ?? 0;
+  const effectivePaymentMethods = parsed.data.paymentMethods ?? (Array.isArray(post.paymentMethods) ? post.paymentMethods as string[] : ["IN_PERSON"]);
+  if (effectiveFee === 0 && effectivePaymentMethods.includes("PAYMONGO")) {
+    return res.status(400).json({ error: "Set an entry fee before enabling online checkout." });
+  }
   if (effectiveEnd && (!effectiveStart || effectiveEnd <= effectiveStart)) {
     return res.status(400).json({ error: "Event end time must be after its start time." });
   }
@@ -328,11 +341,15 @@ postsRouter.patch("/:id", attachUser, requireAuth, async (req: AuthedRequest, re
 
   const updated = await prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT "id" FROM "TournamentPost" WHERE "id" = ${post.id} FOR UPDATE`;
+    if (parsed.data.entryFeeCents !== undefined && (parsed.data.entryFeeCents ?? 0) !== (post.entryFeeCents ?? 0)) {
+      const registrationCount = await tx.registrationSubmission.count({ where: { postId: post.id } });
+      if (registrationCount > 0) return { capacityConflict: false as const, feeConflict: true as const };
+    }
     if (capacity !== undefined && capacity !== null) {
       const activeCount = await tx.registrationSubmission.count({
         where: { postId: post.id, status: { in: ["PENDING", "APPROVED", "INVITED", "RESERVED"] } },
       });
-      if (capacity < activeCount) return { capacityConflict: true as const };
+      if (capacity < activeCount) return { capacityConflict: true as const, feeConflict: false as const };
     }
     const updatedPost = await tx.tournamentPost.update({
       where: { id: post.id },
@@ -359,8 +376,9 @@ postsRouter.patch("/:id", attachUser, requireAuth, async (req: AuthedRequest, re
         data: tournamentChanges,
       });
     }
-    return { capacityConflict: false as const, post: updatedPost };
+    return { capacityConflict: false as const, feeConflict: false as const, post: updatedPost };
   });
+  if (updated.feeConflict) return res.status(409).json({ error: "Entry fees cannot be changed after players have registered. Create a new event if pricing must change." });
   if (updated.capacityConflict) return res.status(409).json({ error: "Capacity cannot be lower than the number of pending and confirmed players." });
   res.json({ id: updated.post.id });
 });
@@ -373,6 +391,8 @@ postsRouter.delete("/:id", attachUser, requireAuth, async (req: AuthedRequest, r
   });
   if (!post) return res.status(404).json({ error: "Tournament post not found." });
   if (post.hostId !== req.userId) return res.status(403).json({ error: "Only the host can delete this post." });
+  const eventPaymentCount = await prisma.eventPayment.count({ where: { registration: { postId: post.id } } });
+  if (eventPaymentCount > 0) return res.status(409).json({ error: "This event has payment records and cannot be deleted. It will be removed from active listings when finalized." });
 
   for (const photo of post.photos) {
     await unlinkTournamentPhoto(photo.storedFile);
@@ -488,7 +508,7 @@ postsRouter.delete("/:id/photos/:photoId", attachUser, requireAuth, async (req: 
 // Register for a tournament. If the host defined custom fields, `answers`
 // must be an object keyed by field label; otherwise it's just a join.
 postsRouter.post("/:id/register", attachUser, requireAuth, async (req: AuthedRequest, res) => {
-  const post = await prisma.tournamentPost.findUnique({ where: { id: req.params.id } });
+  const post = await prisma.tournamentPost.findUnique({ where: { id: req.params.id }, include: { tournament: { select: { resultsFinalizedAt: true } } } });
   if (!post) return res.status(404).json({ error: "Tournament post not found." });
 
   const fields = ((post.registrationFields as any[]) ?? []) as { label: string; required?: boolean }[];
@@ -510,6 +530,7 @@ postsRouter.post("/:id/register", attachUser, requireAuth, async (req: AuthedReq
     return res.status(400).json({ error: "Name and valid skill level are required." });
   }
   if (!post.tournamentId) return res.status(400).json({ error: "This post is not linked to a tournament yet." });
+  if (post.tournament?.resultsFinalizedAt) return res.status(409).json({ error: "This event has finished and is no longer accepting registrations." });
   if (participantUserId !== null && typeof participantUserId !== "string") return res.status(400).json({ error: "Choose a valid player account or enter the player manually." });
   if (typeof participantUserId === "string") {
     const participantUser = await prisma.user.findFirst({ where: { id: participantUserId, role: "PLAYER" }, select: { id: true } });
@@ -551,7 +572,19 @@ postsRouter.post("/:id/register", attachUser, requireAuth, async (req: AuthedReq
     }
 
     const status = participantUserId && participantUserId !== req.userId ? "INVITED" as const : "PENDING" as const;
-    const values = { answers, applicantName, skillLevel, contact, division, paymentMethod, participantUserId };
+    const values = {
+      answers,
+      applicantName,
+      skillLevel,
+      contact,
+      division,
+      paymentMethod,
+      participantUserId,
+      paymentStatus: post.entryFeeCents && post.entryFeeCents > 0 ? "PENDING" as const : "UNPAID" as const,
+      paymentVerifiedAt: null,
+      paymentVerifiedById: null,
+      paymentVerificationNote: null,
+    };
     const submission = existing
       ? await tx.registrationSubmission.update({ where: { id: existing.id }, data: { ...values, status } })
       : await tx.registrationSubmission.create({ data: { postId: post.id, userId: req.userId!, status, ...values } });
@@ -598,10 +631,17 @@ postsRouter.post("/:id/register/:submissionId/accept", attachUser, requireAuth, 
 
 postsRouter.post("/:id/register/payment-proof", attachUser, requireAuth, uploadPaymentProof.single("proof"), async (req: AuthedRequest, res) => {
   const submissionId = typeof req.body?.submissionId === "string" ? req.body.submissionId : "";
-  const submission = await prisma.registrationSubmission.findFirst({ where: { id: submissionId, postId: req.params.id, userId: req.userId! }, include: { post: true } });
+  const submission = await prisma.registrationSubmission.findFirst({
+    where: { id: submissionId, postId: req.params.id, userId: req.userId! },
+    include: { post: { include: { tournament: { select: { resultsFinalizedAt: true } } } } },
+  });
   if (!submission) return res.status(404).json({ error: "Submit your registration details first." });
+  if (submission.post.tournament?.resultsFinalizedAt) return res.status(409).json({ error: "This event has finished and is no longer accepting payments." });
   if (!req.file) return res.status(400).json({ error: "Payment proof image is required." });
-  const updated = await prisma.registrationSubmission.update({ where: { id: submission.id }, data: { paymentProofStoredFile: req.file.filename, paymentProofUrl: null } });
+  const updated = await prisma.registrationSubmission.update({
+    where: { id: submission.id },
+    data: { paymentProofStoredFile: req.file.filename, paymentProofUrl: null, paymentStatus: "PENDING" },
+  });
   res.json({ hasPaymentProof: !!updated.paymentProofStoredFile, status: updated.status });
 });
 
@@ -611,9 +651,20 @@ postsRouter.delete("/:id/register", attachUser, requireAuth, async (req: AuthedR
   });
   if (!submission) return res.status(404).json({ error: "Registration request not found." });
   if (submission.status === "APPROVED") return res.status(409).json({ error: "Contact the organizer to cancel a confirmed place." });
-
-  await prisma.registrationSubmission.delete({ where: { id: submission.id } });
-  if (submission.paymentProofStoredFile) await unlinkPaymentProof(submission.paymentProofStoredFile);
+  if (submission.paymentStatus === "PAID" || submission.paymentStatus === "VERIFIED") return res.status(409).json({ error: "This registration has a recorded payment. Contact the organizer to resolve it; paid registrations cannot be withdrawn online." });
+  const outcome = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "RegistrationSubmission" WHERE "id" = ${submission.id} FOR UPDATE`;
+    const current = await tx.registrationSubmission.findUnique({ where: { id: submission.id } });
+    if (!current || current.participantUserId !== req.userId) return "missing";
+    if (current.status === "APPROVED" || current.paymentStatus === "PAID" || current.paymentStatus === "VERIFIED") return "paid-or-approved";
+    if (await tx.eventPayment.count({ where: { registrationId: current.id, status: "PENDING" } })) return "checkout-pending";
+    await tx.registrationSubmission.delete({ where: { id: current.id } });
+    return current.paymentProofStoredFile;
+  });
+  if (outcome === "missing") return res.status(404).json({ error: "Registration request not found." });
+  if (outcome === "paid-or-approved") return res.status(409).json({ error: "This registration has a confirmed place or payment. Contact the organizer to resolve it." });
+  if (outcome === "checkout-pending") return res.status(409).json({ error: "A checkout is active for this registration. Complete or resolve that payment before withdrawing." });
+  if (outcome) await unlinkPaymentProof(outcome);
   res.json({ ok: true });
 });
 
@@ -623,8 +674,20 @@ postsRouter.delete("/:id/register/:submissionId", attachUser, requireAuth, async
   });
   if (!submission) return res.status(404).json({ error: "Registration request not found." });
   if (submission.status === "APPROVED") return res.status(409).json({ error: "Contact the organizer to cancel a confirmed place." });
-  await prisma.registrationSubmission.delete({ where: { id: submission.id } });
-  if (submission.paymentProofStoredFile) await unlinkPaymentProof(submission.paymentProofStoredFile);
+  if (submission.paymentStatus === "PAID" || submission.paymentStatus === "VERIFIED") return res.status(409).json({ error: "This registration has a recorded payment. Contact the organizer to resolve it; paid registrations cannot be withdrawn online." });
+  const outcome = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "RegistrationSubmission" WHERE "id" = ${submission.id} FOR UPDATE`;
+    const current = await tx.registrationSubmission.findUnique({ where: { id: submission.id } });
+    if (!current || current.userId !== req.userId) return "missing";
+    if (current.status === "APPROVED" || current.paymentStatus === "PAID" || current.paymentStatus === "VERIFIED") return "paid-or-approved";
+    if (await tx.eventPayment.count({ where: { registrationId: current.id, status: "PENDING" } })) return "checkout-pending";
+    await tx.registrationSubmission.delete({ where: { id: current.id } });
+    return current.paymentProofStoredFile;
+  });
+  if (outcome === "missing") return res.status(404).json({ error: "Registration request not found." });
+  if (outcome === "paid-or-approved") return res.status(409).json({ error: "This registration has a confirmed place or payment. Contact the organizer to resolve it." });
+  if (outcome === "checkout-pending") return res.status(409).json({ error: "A checkout is active for this registration. Complete or resolve that payment before withdrawing." });
+  if (outcome) await unlinkPaymentProof(outcome);
   res.json({ ok: true });
 });
 
@@ -643,15 +706,60 @@ postsRouter.get("/:id/submissions", attachUser, requireAuth, async (req: AuthedR
   res.json(submissions);
 });
 
+postsRouter.patch("/:id/submissions/:submissionId/verify-payment", attachUser, requireAuth, async (req: AuthedRequest, res) => {
+  const post = await prisma.tournamentPost.findUnique({ where: { id: req.params.id } });
+  if (!post || post.hostId !== req.userId) return res.status(403).json({ error: "Only the event organizer can verify payment." });
+  const submission = await prisma.registrationSubmission.findFirst({
+    where: { id: req.params.submissionId, postId: post.id },
+  });
+  if (!submission) return res.status(404).json({ error: "Registration request not found." });
+  if (!post.entryFeeCents || post.entryFeeCents < 1) return res.status(400).json({ error: "This event does not have a recorded entry fee." });
+  if (submission.paymentStatus === "PAID" || submission.paymentStatus === "VERIFIED") {
+    return res.status(409).json({ error: "Payment is already verified." });
+  }
+  if (submission.paymentMethod === "PAYMONGO") return res.status(409).json({ error: "Online payments are verified automatically by PayMongo. Do not record this as an offline payment." });
+  if (submission.paymentMethod === "QR" && !submission.paymentProofStoredFile) return res.status(409).json({ error: "Ask the player to upload payment proof before verifying a QR payment." });
+  const note = typeof req.body?.note === "string" ? req.body.note.trim().slice(0, 250) : "";
+  const setting = await prisma.platformSetting.findUnique({ where: { id: "platform" }, select: { eventCommissionBps: true } });
+  const commissionCents = calculateCommissionCents(post.entryFeeCents, setting?.eventCommissionBps ?? 500);
+  const updated = await prisma.$transaction(async (tx) => {
+    const result = await tx.registrationSubmission.update({
+      where: { id: submission.id },
+      data: {
+        paymentStatus: "VERIFIED",
+        paymentVerifiedAt: new Date(),
+        paymentVerifiedById: req.userId!,
+        paymentVerificationNote: note || (submission.paymentMethod === "IN_PERSON" ? "Verified in person by organizer" : "Verified by organizer"),
+      },
+    });
+    await tx.paymentLedgerEntry.createMany({
+      data: [
+        { idempotencyKey: `manual-registration:${submission.id}:gross`, type: "OFFLINE_EVENT_PAYMENT", amountCents: post.entryFeeCents!, description: `Offline payment verified by organizer for ${post.title}; not collected by Playwell`, registrationId: submission.id },
+        { idempotencyKey: `manual-registration:${submission.id}:commission`, type: "ACCRUED_PLATFORM_COMMISSION", amountCents: commissionCents, description: `Accrued platform commission for offline payment for ${post.title}`, registrationId: submission.id },
+      ],
+      skipDuplicates: true,
+    });
+    return result;
+  });
+  res.json(updated);
+});
+
 postsRouter.patch("/:id/submissions/:submissionId", attachUser, requireAuth, async (req: AuthedRequest, res) => {
   const post = await prisma.tournamentPost.findUnique({ where: { id: req.params.id } });
   if (!post || post.hostId !== req.userId) return res.status(403).json({ error: "Only the tournament admin can review requests." });
   const status = req.body?.status;
   if (!["APPROVED", "REJECTED", "RESERVED", "PENDING"].includes(status)) return res.status(400).json({ error: "Invalid review status." });
-  const submission = await prisma.registrationSubmission.findUnique({ where: { id: req.params.submissionId } });
-  if (!submission || submission.postId !== post.id) return res.status(404).json({ error: "Registration request not found." });
   if (!post.tournamentId) return res.status(400).json({ error: "This post is not linked to a tournament." });
   const result = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "RegistrationSubmission" WHERE "id" = ${req.params.submissionId} FOR UPDATE`;
+    const submission = await tx.registrationSubmission.findUnique({ where: { id: req.params.submissionId } });
+    if (!submission || submission.postId !== post.id) return { kind: "missing" as const };
+    if (status === "REJECTED" && ["PAID", "VERIFIED"].includes(submission.paymentStatus)) {
+      return { kind: "paid" as const };
+    }
+    if (status === "APPROVED" && post.entryFeeCents && post.entryFeeCents > 0 && !["PAID", "VERIFIED"].includes(submission.paymentStatus)) {
+      return { kind: "unverified" as const };
+    }
     const updated = await tx.registrationSubmission.update({ where: { id: submission.id }, data: { status } });
     let playerId: string | null = null;
     if (status === "APPROVED") {
@@ -674,8 +782,11 @@ postsRouter.patch("/:id/submissions/:submissionId", attachUser, requireAuth, asy
           ? `Your registration for ${post.title} is back on the waitlist.`
           : `Your registration request for ${post.title} was not approved. Contact the event organizer for details.`;
     await tx.notification.create({ data: { userId: notificationUserId, type: `REGISTRATION_${status}`, title: `Event request ${status.toLowerCase()}`, message, actionUrl: `/community/${post.id}` } });
-    return { updated, playerId };
+    return { kind: "updated" as const, updated, playerId };
   });
+  if (result.kind === "missing") return res.status(404).json({ error: "Registration request not found." });
+  if (result.kind === "paid") return res.status(409).json({ error: "This registration has a confirmed payment. Resolve the payment or refund before rejecting it." });
+  if (result.kind === "unverified") return res.status(409).json({ error: "Verify the entry payment before approving this registration." });
   if (result.playerId) await enqueuePlayer(post.tournamentId!, result.playerId);
   res.json(result.updated);
 });

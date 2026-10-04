@@ -21,13 +21,14 @@ import { rafflesRouter } from "./routes/raffles";
 import { postsRouter } from "./routes/posts";
 import { usersRouter } from "./routes/users";
 import { notificationsRouter } from "./routes/notifications";
+import { paymentsRouter, payMongoPayoutCallback, payMongoWebhook } from "./routes/payments";
 import { attachUser, requireAuth, canManageTournament, refreshSubscriptionStatus, AuthedRequest } from "./lib/auth";
 
 const app = express();
 app.use((req, res, next) => {
   const startedAt = Date.now();
   res.on("finish", () => {
-    if (req.path !== "/health") console.log(JSON.stringify({ method: req.method, path: req.path, status: res.statusCode, durationMs: Date.now() - startedAt }));
+    if (req.path !== "/health") console.log(JSON.stringify({ method: req.method, path: req.path.startsWith("/api/webhooks/paymongo") ? "/api/webhooks/paymongo" : req.path, status: res.statusCode, durationMs: Date.now() - startedAt }));
   });
   next();
 });
@@ -35,6 +36,8 @@ app.use(cors({
   origin: process.env.CORS_ORIGIN || "http://localhost:5173",
   credentials: true,
 }));
+app.post("/api/webhooks/paymongo", express.raw({ type: "application/json" }), payMongoWebhook);
+app.post("/api/webhooks/paymongo/payout/:token", express.raw({ type: "application/json" }), payMongoPayoutCallback);
 app.use(express.json());
 app.use(cookieParser());
 
@@ -55,6 +58,7 @@ app.use("/api/raffles", rafflesRouter);
 app.use("/api/posts", postsRouter);
 app.use("/api/users", usersRouter);
 app.use("/api/notifications", notificationsRouter);
+app.use("/api/payments", paymentsRouter);
 
 app.post("/api/players/join", attachUser, requireAuth, async (req: AuthedRequest, res) => {
   if (!req.userId) return res.status(401).json({ error: "Not signed in." });

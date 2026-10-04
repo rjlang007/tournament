@@ -95,7 +95,9 @@ export default function Feed() {
               {post.divisions && post.divisions.length > 0 && <p className="text-xs text-white/55">{post.divisions.map((division) => `${division.name.toLowerCase().replace(/_/g, " ")} ${division.registered}/${division.capacity}`).join(" · ")}</p>}
               <div className="mt-auto pt-2 flex items-center justify-between text-xs text-white/50">
                 <span>📍 {post.location}</span>
-                {post.amount && <span className="text-ball">{post.amount}</span>}
+                {post.entryFeeCents != null && post.entryFeeCents > 0
+                  ? <span className="text-ball">₱{(post.entryFeeCents / 100).toFixed(2)} entry</span>
+                  : post.amount && <span className="text-ball">{post.amount}</span>}
               </div>
               <div className="flex items-center gap-2 pt-2 border-t border-white/10 mt-2">
                 <img src={fileUrl(post.host.avatarUrl)} alt="" className="w-5 h-5 rounded-full object-cover" />

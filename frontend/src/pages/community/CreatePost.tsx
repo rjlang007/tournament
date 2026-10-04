@@ -26,6 +26,7 @@ export default function CreatePost() {
   const [locationLatitude, setLocationLatitude] = useState<number | null>(null);
   const [locationLongitude, setLocationLongitude] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
+  const [entryFee, setEntryFee] = useState("");
   const [scheduledStart, setScheduledStart] = useState("");
   const [scheduledEnd, setScheduledEnd] = useState("");
   const [registrationLink, setRegistrationLink] = useState("");
@@ -59,6 +60,7 @@ export default function CreatePost() {
         setLocationLatitude(data.locationLatitude ?? null);
         setLocationLongitude(data.locationLongitude ?? null);
         setAmount(data.amount ?? "");
+        setEntryFee(data.entryFeeCents != null ? (data.entryFeeCents / 100).toFixed(2) : "");
         setScheduledStart(toLocalDateTime(data.scheduledStart));
         setScheduledEnd(toLocalDateTime(data.scheduledEnd));
         setRegistrationLink(data.registrationLink ?? "");
@@ -97,6 +99,11 @@ export default function CreatePost() {
       setError("Choose at least one payment option.");
       return;
     }
+    const entryFeeCents = entryFee.trim() ? Math.round(Number(entryFee) * 100) : 0;
+    if (!Number.isFinite(entryFeeCents) || entryFeeCents < 0 || entryFeeCents > 100000000) {
+      setError("Enter a valid entry fee in PHP (up to ₱1,000,000).");
+      return;
+    }
     if (!isEditing && (locationLatitude === null || locationLongitude === null)) {
       setError("Pin the venue on the map before publishing.");
       return;
@@ -118,6 +125,7 @@ export default function CreatePost() {
         locationLatitude,
         locationLongitude,
         amount: isEditing ? amount : amount || undefined,
+        entryFeeCents,
         capacity: divisions.reduce((total, division) => total + division.capacity, 0),
         divisions,
         paymentMethods,
@@ -201,14 +209,24 @@ export default function CreatePost() {
             <input className={inputClass} value={location} onChange={(e) => setLocation(e.target.value)} required />
           </div>
           <div>
-            <label className="block text-sm text-white/70 mb-1">Entry fee or prize in PHP (optional)</label>
+            <label className="block text-sm text-white/70 mb-1">Prize / event note (optional)</label>
             <input
               className={inputClass}
-              placeholder="e.g. ₱200 per player or Free"
+              placeholder="e.g. ₱500 prize pool"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
             />
           </div>
+        </div>
+        <div>
+          <label className="block text-sm text-white/70 mb-1">Player entry fee (PHP, optional)</label>
+          <input className={inputClass} type="number" min="0.01" max="1000000" step="0.01" placeholder="e.g. 200.00" value={entryFee} onChange={(event) => {
+            const nextFee = event.target.value;
+            if (!entryFee.trim() && nextFee.trim()) setPaymentMethods(["PAYMONGO"]);
+            if (entryFee.trim() && !nextFee.trim() && paymentMethods.includes("PAYMONGO")) setPaymentMethods(["IN_PERSON"]);
+            setEntryFee(nextFee);
+          }} />
+          <p className="mt-1 text-xs text-white/45">Online payments are collected by Playwell; its 5% commission and payment fees are deducted from the organizer payout. Offline payments go directly to the organizer and their commission is reported as accrued.</p>
         </div>
         <section className="space-y-3 rounded-lg border border-white/10 p-4">
           <div><h2 className="font-display font-semibold text-white">Venue pin</h2><p className="text-xs text-white/50">Tap the map to place the event pin.</p></div>
@@ -237,8 +255,9 @@ export default function CreatePost() {
           {Object.values(divisionCapacities).some(Boolean) && <p className="text-xs text-white/55">Total event capacity: {Object.values(divisionCapacities).reduce((sum, value) => sum + (Number(value) || 0), 0)}</p>}
         </section>
         <section className="space-y-3 rounded-lg border border-white/10 p-4">
-          <div><h2 className="font-display font-semibold text-white">Payment options</h2><p className="text-xs text-white/50">Choose how players can pay the organizer.</p></div>
+          <div><h2 className="font-display font-semibold text-white">Payment options</h2><p className="text-xs text-white/50">{Number(entryFee) > 0 ? "Paid events use Playwell online checkout; payment is collected by the platform for organizer payout." : "Choose how players can pay for offline arrangements."}</p></div>
           <div className="flex flex-wrap gap-5">
+            <label className={`flex items-center gap-2 text-sm ${Number(entryFee) > 0 ? "text-white/75" : "text-white/35"}`}><input type="checkbox" disabled={Number(entryFee) <= 0} checked={paymentMethods.includes("PAYMONGO")} onChange={(event) => setPaymentMethods((current) => event.target.checked ? [...current, "PAYMONGO"] : current.filter((method) => method !== "PAYMONGO"))} />Playwell online checkout</label>
             <label className="flex items-center gap-2 text-sm text-white/75"><input type="checkbox" checked={paymentMethods.includes("QR")} onChange={(event) => setPaymentMethods((current) => event.target.checked ? [...current, "QR"] : current.filter((method) => method !== "QR"))} />QR / e-wallet</label>
             <label className="flex items-center gap-2 text-sm text-white/75"><input type="checkbox" checked={paymentMethods.includes("IN_PERSON")} onChange={(event) => setPaymentMethods((current) => event.target.checked ? [...current, "IN_PERSON"] : current.filter((method) => method !== "IN_PERSON"))} />Pay in person</label>
           </div>

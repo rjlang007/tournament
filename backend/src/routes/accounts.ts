@@ -78,9 +78,15 @@ accountsRouter.post("/subscription-payment-proof", attachUser, requireAuth, uplo
   const user = await prisma.user.findUnique({ where: { id: req.userId! }, select: { role: true, subscriptionPaymentProofStoredFile: true } });
   if (!user || user.role !== "ADMIN") return res.status(403).json({ error: "Only organizer accounts can submit renewal proof." });
   if (!req.file) return res.status(400).json({ error: "Payment proof image is required." });
+  const setting = await prisma.platformSetting.findUnique({ where: { id: "platform" }, select: { monthlyPriceCents: true } });
   const updated = await prisma.user.update({
     where: { id: req.userId! },
-    data: { subscriptionPaymentProofStoredFile: req.file.filename, subscriptionPaymentSubmittedAt: new Date(), subscriptionPaymentStatus: "PENDING" },
+    data: {
+      subscriptionPaymentProofStoredFile: req.file.filename,
+      subscriptionPaymentSubmittedAt: new Date(),
+      subscriptionPaymentStatus: "PENDING",
+      subscriptionPaymentAmountCents: setting?.monthlyPriceCents ?? 0,
+    },
   });
   if (user.subscriptionPaymentProofStoredFile) await unlinkPaymentProof(user.subscriptionPaymentProofStoredFile);
   res.json({ paymentStatus: updated.subscriptionPaymentStatus, paymentSubmittedAt: updated.subscriptionPaymentSubmittedAt });
@@ -97,21 +103,54 @@ accountsRouter.get("/:id/subscription-payment-proof", attachUser, requireAuth, a
 });
 
 accountsRouter.patch("/:id/approve-payment", attachUser, requireSuperAdmin, async (req, res) => {
-  const user = await prisma.user.findUnique({ where: { id: req.params.id } });
-  if (!user || user.role !== "ADMIN") return res.status(404).json({ error: "Administrator account not found." });
-  const now = new Date();
-  const base = user.subscriptionExpiresAt && user.subscriptionExpiresAt > now ? user.subscriptionExpiresAt : now;
-  const updated = await prisma.user.update({
-    where: { id: user.id },
-    data: { subscriptionExpiresAt: new Date(base.getTime() + 30 * 24 * 60 * 60 * 1000), subscriptionStatus: "ACTIVE", ...(user.subscriptionPaymentProofStoredFile ? { subscriptionPaymentStatus: "APPROVED" as const } : {}) },
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${req.params.id} FOR UPDATE`;
+    const user = await tx.user.findUnique({ where: { id: req.params.id } });
+    if (!user || user.role !== "ADMIN") return { kind: "missing" as const };
+    if (user.subscriptionPaymentStatus !== "PENDING" || !user.subscriptionPaymentProofStoredFile || !user.subscriptionPaymentSubmittedAt) {
+      return { kind: "not-pending" as const };
+    }
+    const now = new Date();
+    const base = user.subscriptionExpiresAt && user.subscriptionExpiresAt > now ? user.subscriptionExpiresAt : now;
+    const updated = await tx.user.update({
+      where: { id: user.id },
+      data: { subscriptionExpiresAt: new Date(base.getTime() + 30 * 24 * 60 * 60 * 1000), subscriptionStatus: "ACTIVE", subscriptionPaymentStatus: "APPROVED" },
+    });
+    const amountCents = user.subscriptionPaymentAmountCents ?? 0;
+    if (amountCents > 0 && user.subscriptionPaymentSubmittedAt) {
+      await tx.paymentLedgerEntry.createMany({
+        data: [{
+          idempotencyKey: `subscription:${user.id}:${user.subscriptionPaymentSubmittedAt.toISOString()}`,
+          type: "SUBSCRIPTION_PAYMENT",
+          amountCents,
+          description: `Verified organizer subscription renewal for @${user.username}`,
+          userId: user.id,
+        }],
+        skipDuplicates: true,
+      });
+    }
+    return { kind: "approved" as const, updated };
   });
+  if (result.kind === "missing") return res.status(404).json({ error: "Administrator account not found." });
+  if (result.kind === "not-pending") return res.status(409).json({ error: "A pending renewal payment with uploaded proof is required before approval." });
+  const updated = result.updated;
   res.json({ id: updated.id, username: updated.username, subscriptionExpiresAt: updated.subscriptionExpiresAt, subscriptionStatus: updated.subscriptionStatus });
 });
 
 accountsRouter.patch("/:id/reject-payment", attachUser, requireSuperAdmin, async (req, res) => {
-  const user = await prisma.user.findUnique({ where: { id: req.params.id, role: "ADMIN" } });
-  if (!user) return res.status(404).json({ error: "Organizer account not found." });
-  const updated = await prisma.user.update({ where: { id: user.id }, data: { subscriptionPaymentStatus: "REJECTED" } });
+  const result = await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT "id" FROM "User" WHERE "id" = ${req.params.id} FOR UPDATE`;
+    const user = await tx.user.findUnique({ where: { id: req.params.id, role: "ADMIN" } });
+    if (!user) return { kind: "missing" as const };
+    if (user.subscriptionPaymentStatus !== "PENDING" || !user.subscriptionPaymentProofStoredFile || !user.subscriptionPaymentSubmittedAt) {
+      return { kind: "not-pending" as const };
+    }
+    const updated = await tx.user.update({ where: { id: user.id }, data: { subscriptionPaymentStatus: "REJECTED" } });
+    return { kind: "rejected" as const, updated };
+  });
+  if (result.kind === "missing") return res.status(404).json({ error: "Organizer account not found." });
+  if (result.kind === "not-pending") return res.status(409).json({ error: "There is no pending renewal payment to reject." });
+  const updated = result.updated;
   res.json({ id: updated.id, subscriptionPaymentStatus: updated.subscriptionPaymentStatus });
 });
 

@@ -28,6 +28,10 @@ export default function PostDetail() {
   const [paymentProof, setPaymentProof] = useState<File | null>(null);
   const [submissions, setSubmissions] = useState<any[]>([]);
   const [withdrawing, setWithdrawing] = useState(false);
+  const [startingCheckout, setStartingCheckout] = useState(false);
+  const [payoutAccountConfigured, setPayoutAccountConfigured] = useState(false);
+  const [payoutAccount, setPayoutAccount] = useState({ number: "", name: "", bic: "" });
+  const [payoutAccountMessage, setPayoutAccountMessage] = useState("");
 
   function load() {
     if (!postId) return;
@@ -41,7 +45,10 @@ export default function PostDetail() {
         }
         setDivision(data.myRegistration?.division ?? data.divisions[0]?.name ?? "");
         setPaymentMethod(data.myRegistration?.paymentMethod ?? data.paymentMethods[0] ?? "IN_PERSON");
-        if (data.isOwner) api.get(`/posts/${postId}/submissions`).then(({ data: rows }) => setSubmissions(rows));
+        if (data.isOwner) {
+          api.get(`/posts/${postId}/submissions`).then(({ data: rows }) => setSubmissions(rows));
+          api.get<{ configured: boolean }>("/payments/payout-account").then(({ data: account }) => setPayoutAccountConfigured(account.configured));
+        }
       })
       .catch((err) => setError(err?.response?.data?.error || "Couldn't load this tournament."));
   }
@@ -88,7 +95,11 @@ export default function PostDetail() {
         form.append("submissionId", registration.id);
         await api.post(`/posts/${postId}/register/payment-proof`, form, { headers: { "Content-Type": "multipart/form-data" } });
       }
-      setRegisterMsg(registration.status === "INVITED" ? "Invitation sent. The selected player must accept it before organizer review." : "Request submitted. The tournament admin will review your payment.");
+      if (paymentMethod === "PAYMONGO" && registration.status !== "INVITED") {
+        await startCheckout(registration.id);
+        return;
+      }
+      setRegisterMsg(registration.status === "INVITED" ? "Invitation sent. The selected player must accept it before payment and organizer review." : "Registration submitted. Complete payment to secure your request.");
       setApplicantName("");
       setContact("");
       setParticipantUserId("");
@@ -101,16 +112,54 @@ export default function PostDetail() {
     }
   }
 
+  async function startCheckout(submissionId: string) {
+    setStartingCheckout(true);
+    setRegisterMsg(null);
+    try {
+      const { data } = await api.post<{ checkoutUrl: string }>(`/payments/events/${submissionId}/checkout`);
+      window.location.assign(data.checkoutUrl);
+    } catch (err: any) {
+      setRegisterMsg(err?.response?.data?.error || "Could not start online checkout. Try again.");
+    } finally {
+      setStartingCheckout(false);
+    }
+  }
+
   async function reviewSubmission(id: string, status: "APPROVED" | "REJECTED" | "RESERVED" | "PENDING") {
     await api.patch(`/posts/${postId}/submissions/${id}`, { status });
     setSubmissions((rows) => rows.map((row) => row.id === id ? { ...row, status } : row));
     load();
   }
 
+  async function verifyPayment(submission: any) {
+    const method = submission.paymentMethod === "IN_PERSON" ? "in-person payment" : "uploaded payment proof";
+    if (!confirm(`Confirm that you received and verified this ${method}?`)) return;
+    await api.patch(`/posts/${postId}/submissions/${submission.id}/verify-payment`);
+    setSubmissions((rows) => rows.map((row) => row.id === submission.id ? { ...row, paymentStatus: "VERIFIED" } : row));
+    load();
+  }
+
   async function acceptInvitation() {
     if (!postId || !post?.myRegistration) return;
     await api.post(`/posts/${postId}/register/${post.myRegistration.id}/accept`);
+    if (post.myRegistration.paymentMethod === "PAYMONGO") {
+      await startCheckout(post.myRegistration.id);
+      return;
+    }
     load();
+  }
+
+  async function savePayoutAccount(event: FormEvent) {
+    event.preventDefault();
+    setPayoutAccountMessage("");
+    try {
+      await api.put("/payments/payout-account", payoutAccount);
+      setPayoutAccountConfigured(true);
+      setPayoutAccount({ number: "", name: "", bic: "" });
+      setPayoutAccountMessage("Encrypted payout details saved. For security, the saved account number is not displayed.");
+    } catch (err: any) {
+      setPayoutAccountMessage(err?.response?.data?.error || "Could not save payout details.");
+    }
   }
 
   async function withdrawRequest() {
@@ -233,12 +282,13 @@ export default function PostDetail() {
             <span className="text-white/50">💰 Entry / prize:</span> {post.amount}
           </p>
         )}
+        {post.entryFeeCents != null && post.entryFeeCents > 0 && <p className="text-white/80"><span className="text-white/50">🎟 Entry fee:</span> ₱{(post.entryFeeCents / 100).toFixed(2)} per registration</p>}
         <p className="text-white/80">
           <span className="text-white/50">👥 Registered:</span> {post.registrationCount}
         </p>
         {post.capacity != null && <p className="text-white/80"><span className="text-white/50">Open spots:</span> {Math.max(0, post.capacity - post.registrationCount)}</p>}
         {post.divisions.length > 0 && <div className="border-t border-white/10 pt-2"><p className="mb-1 text-white/50">Player divisions</p><div className="grid gap-1 sm:grid-cols-2">{post.divisions.map((item) => <p key={item.name} className="text-white/75">{divisionLabel(item.name)}: {item.registered}/{item.capacity} players</p>)}</div></div>}
-        <p className="text-white/80"><span className="text-white/50">Payment options:</span> {post.paymentMethods.map((method) => method === "QR" ? "QR / e-wallet" : "Pay in person").join(" · ")}</p>
+        <p className="text-white/80"><span className="text-white/50">Payment options:</span> {post.paymentMethods.map((method) => method === "PAYMONGO" ? "Secure Playwell checkout" : method === "QR" ? "QR / e-wallet" : "Pay in person").join(" · ")}</p>
       </div>
 
       <section className="mb-6 space-y-4">
@@ -266,6 +316,15 @@ export default function PostDetail() {
         </>
       )}
       {post.paymentInstructions && <div className="mb-6"><h3 className="font-display font-semibold text-white mb-1">Payment instructions</h3><p className="text-white/70 whitespace-pre-wrap">{post.paymentInstructions}</p></div>}
+      {post.isOwner && post.entryFeeCents != null && post.entryFeeCents > 0 && post.paymentMethods.includes("PAYMONGO") && <form onSubmit={savePayoutAccount} className="mb-6 space-y-3 rounded-xl border border-white/10 p-4">
+        <h3 className="font-display font-semibold text-white">Organizer payout account</h3>
+        <p className="text-xs text-white/50">{payoutAccountConfigured ? "A payout account is saved securely. Enter new details only if you want to replace it." : "Save your bank account details before payouts can be issued. Details are encrypted and never shown back."}</p>
+        <input className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white" placeholder="Account holder name" value={payoutAccount.name} onChange={(event) => setPayoutAccount({ ...payoutAccount, name: event.target.value })} required />
+        <input className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white" placeholder="Bank account number" value={payoutAccount.number} onChange={(event) => setPayoutAccount({ ...payoutAccount, number: event.target.value })} required />
+        <input className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-sm text-white" placeholder="Bank BIC (e.g. BNORPHMM)" value={payoutAccount.bic} onChange={(event) => setPayoutAccount({ ...payoutAccount, bic: event.target.value.toUpperCase() })} required />
+        {payoutAccountMessage && <p className="text-xs text-ball">{payoutAccountMessage}</p>}
+        <button className="rounded-lg border border-white/20 px-3 py-2 text-sm text-white">Save encrypted payout details</button>
+      </form>}
       {post.paymentMethods.includes("QR") && post.paymentQrUrl && <div className="mb-6"><h3 className="mb-2 font-display font-semibold text-white">Scan to pay</h3><img src={fileUrl(post.paymentQrUrl)} alt={`Payment QR for ${post.title}`} className="max-h-72 w-full rounded-lg border border-white/10 bg-white object-contain p-3 sm:w-auto" /></div>}
 
       {post.registrationLink && (
@@ -291,6 +350,10 @@ export default function PostDetail() {
 
       {user && post.tournamentId && <div className="mt-4 rounded-xl border border-white/10 p-4">
         {post.myRegistration?.status === "APPROVED" && <p className="mb-3 text-sm text-emerald-300">Your place is confirmed.</p>}
+        {post.myRegistration?.paymentMethod === "PAYMONGO" && <div className="mb-3 rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm">
+          <p className="text-white/80">Payment status: <span className={post.myRegistration.paymentStatus === "PAID" || post.myRegistration.paymentStatus === "VERIFIED" ? "text-emerald-300" : post.myRegistration.paymentStatus === "FAILED" ? "text-advance" : "text-ball"}>{post.myRegistration.paymentStatus?.toLowerCase() ?? "pending"}</span></p>
+          {["PENDING", "FAILED"].includes(post.myRegistration.paymentStatus ?? "") && <button type="button" disabled={startingCheckout} onClick={() => startCheckout(post.myRegistration!.id)} className="mt-2 rounded-lg bg-ball px-3 py-1.5 text-sm font-semibold text-neutral-900 disabled:opacity-50">{startingCheckout ? "Opening checkout…" : "Continue to secure payment"}</button>}
+        </div>}
         {post.myRegistration?.status === "INVITED" && <div className="mb-4 rounded-lg border border-ball/30 bg-ball/5 p-3">
           <p className="mb-2 text-sm text-white">You have been invited to this tournament.</p>
           <button type="button" onClick={acceptInvitation} className="rounded-lg bg-ball px-3 py-1.5 text-sm font-semibold text-neutral-900">Accept invitation</button>
@@ -316,7 +379,7 @@ export default function PostDetail() {
           {post.divisions.length > 0 ? <label className="block text-sm text-white/70">Division<select className="mt-1 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white" value={division} onChange={(event) => setDivision(event.target.value as EventDivisionName)} required><option value="" disabled>Select a division</option>{post.divisions.map((item) => { const spotsLeft = item.capacity - item.registered + (participantMode === "self" && post.myRegistration?.division === item.name && existingActiveRequest ? 1 : 0); return <option key={item.name} value={item.name} disabled={spotsLeft <= 0}>{divisionLabel(item.name)} · {Math.max(0, spotsLeft)} spots left</option>; })}</select></label> : <label className="block text-sm text-white/70">Skill level<select className="mt-1 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white" value={skillLevel} onChange={(event) => setSkillLevel(event.target.value as SkillLevel)}><option value="BEGINNER">Beginner</option><option value="AVERAGE">Average</option><option value="ADVANCE">Advanced</option></select></label>}
           <input className="w-full rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-white" placeholder={participantMode === "self" ? "Your full name" : "Participant's full name"} value={applicantName} onChange={(e) => setApplicantName(e.target.value)} required />
           <input className="w-full rounded-lg bg-white/10 border border-white/20 px-3 py-2 text-white" placeholder="Contact number" value={contact} onChange={(e) => setContact(e.target.value)} />
-          {post.paymentMethods.length > 1 && <label className="block text-sm text-white/70">How will you pay?<select className="mt-1 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as EventPaymentMethod)}>{post.paymentMethods.map((method) => <option key={method} value={method}>{method === "QR" ? "QR / e-wallet" : "Pay in person"}</option>)}</select></label>}
+          {post.paymentMethods.length > 1 && <label className="block text-sm text-white/70">How will you pay?<select className="mt-1 w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white" value={paymentMethod} onChange={(event) => setPaymentMethod(event.target.value as EventPaymentMethod)}>{post.paymentMethods.map((method) => <option key={method} value={method}>{method === "PAYMONGO" ? "Secure Playwell checkout" : method === "QR" ? "QR / e-wallet" : "Pay in person"}</option>)}</select></label>}
           {post.paymentMethods.includes("QR") && paymentMethod === "QR" && <label className="block text-sm text-white/70">Payment receipt (optional until payment is made)<input type="file" accept="image/*" onChange={(e) => setPaymentProof(e.target.files?.[0] ?? null)} className="mt-1 block text-sm text-white/70" /></label>}
           {post.registrationFields.map((field) => <div key={field.label}><label className="mb-1 block text-sm text-white/70">{field.label}{field.required && <span className="text-advance"> *</span>}</label>{field.type === "textarea" ? <textarea className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white" value={answers[field.label] || ""} onChange={(event) => setAnswers({ ...answers, [field.label]: event.target.value })} required={field.required} /> : <input type={field.type === "number" ? "number" : field.type === "email" ? "email" : field.type === "phone" ? "tel" : "text"} className="w-full rounded-lg border border-white/20 bg-white/10 px-3 py-2 text-white" value={answers[field.label] || ""} onChange={(event) => setAnswers({ ...answers, [field.label]: event.target.value })} required={field.required} />}</div>)}
           {post.myRegistration && <p className="text-xs text-white/50">Your status: {registrationStatusLabel(post.myRegistration.status)}</p>}
@@ -331,20 +394,28 @@ export default function PostDetail() {
         <div className="space-y-2">{submissions.map((submission) => <div key={submission.id} className="flex flex-wrap items-start justify-between gap-3 rounded-lg bg-white/[0.03] p-3 text-sm">
           <div className="min-w-0">
             <div className="text-white">{submission.applicantName} {submission.participantUser && <span className="text-xs text-ball">for @{submission.participantUser.username}</span>} <span className="text-xs text-white/40">added by @{submission.user?.username}</span></div>
-            <div className="text-xs text-white/50">{submission.division ? divisionLabel(submission.division) : submission.skillLevel} · {submission.paymentMethod === "QR" ? "QR / e-wallet" : "Pay in person"} · {registrationStatusLabel(submission.status)} · {submission.contact || "No contact provided"} · {new Date(submission.submittedAt).toLocaleString()}</div>
+            <div className="text-xs text-white/50">{submission.division ? divisionLabel(submission.division) : submission.skillLevel} · {submission.paymentMethod === "PAYMONGO" ? "Playwell online checkout" : submission.paymentMethod === "QR" ? "QR / e-wallet" : "Pay in person"} · {registrationStatusLabel(submission.status)}{post.entryFeeCents ? ` · payment ${String(submission.paymentStatus ?? "PENDING").toLowerCase()}` : ""} · {submission.contact || "No contact provided"} · {new Date(submission.submittedAt).toLocaleString()}</div>
             {Object.entries(submission.answers ?? {}).map(([label, answer]) => <div key={label} className="mt-1 text-xs text-white/60">{label}: {String(answer)}</div>)}
-            <div className="mt-1 text-xs">{submission.paymentProofStoredFile ? <a className="text-ball" href={`${API_URL}/api/posts/${postId}/submissions/${submission.id}/payment-proof`} target="_blank" rel="noreferrer">View payment proof</a> : <span className="text-white/40">No proof uploaded; verify in person if applicable</span>}</div>
+            <div className="mt-1 text-xs">{submission.paymentMethod === "PAYMONGO"
+              ? <span className="text-white/40">Online payment is tracked automatically.</span>
+              : submission.paymentProofStoredFile
+                ? <a className="text-ball" href={`${API_URL}/api/posts/${postId}/submissions/${submission.id}/payment-proof`} target="_blank" rel="noreferrer">View payment proof</a>
+                : submission.paymentMethod === "QR"
+                  ? <span className="text-white/40">Payment proof is required for QR payment verification.</span>
+                  : <span className="text-white/40">No proof required for in-person payment; the organizer must verify it.</span>}</div>
           </div>
           <div className="flex shrink-0 flex-wrap gap-2">
             {submission.status === "PENDING" && <>
-              <button onClick={() => reviewSubmission(submission.id, "APPROVED")} className="secondary-button px-2 py-1 text-xs text-emerald-300">Approve</button>
+              <button disabled={post.entryFeeCents != null && post.entryFeeCents > 0 && !["PAID", "VERIFIED"].includes(submission.paymentStatus)} onClick={() => reviewSubmission(submission.id, "APPROVED")} className="secondary-button px-2 py-1 text-xs text-emerald-300 disabled:opacity-40">Approve</button>
               <button onClick={() => reviewSubmission(submission.id, "RESERVED")} className="secondary-button px-2 py-1 text-xs text-sky-300">Reserve</button>
-              <button onClick={() => reviewSubmission(submission.id, "REJECTED")} className="secondary-button px-2 py-1 text-xs text-red-300">Reject</button>
+              {!["PAID", "VERIFIED"].includes(submission.paymentStatus) && <button onClick={() => reviewSubmission(submission.id, "REJECTED")} className="secondary-button px-2 py-1 text-xs text-red-300">Reject</button>}
             </>}
             {submission.status === "RESERVED" && <>
-              <button onClick={() => reviewSubmission(submission.id, "APPROVED")} className="secondary-button px-2 py-1 text-xs text-emerald-300">Approve</button>
+              <button disabled={post.entryFeeCents != null && post.entryFeeCents > 0 && !["PAID", "VERIFIED"].includes(submission.paymentStatus)} onClick={() => reviewSubmission(submission.id, "APPROVED")} className="secondary-button px-2 py-1 text-xs text-emerald-300 disabled:opacity-40">Approve</button>
               <button onClick={() => reviewSubmission(submission.id, "PENDING")} className="secondary-button px-2 py-1 text-xs text-white/60">Return to waitlist</button>
+              {!["PAID", "VERIFIED"].includes(submission.paymentStatus) && <button onClick={() => reviewSubmission(submission.id, "REJECTED")} className="secondary-button px-2 py-1 text-xs text-red-300">Reject</button>}
             </>}
+            {post.entryFeeCents != null && post.entryFeeCents > 0 && submission.paymentMethod !== "PAYMONGO" && !["PAID", "VERIFIED"].includes(submission.paymentStatus) && <button onClick={() => verifyPayment(submission)} className="secondary-button px-2 py-1 text-xs text-ball">Verify payment</button>}
           </div>
         </div>)}</div>
       </div>}

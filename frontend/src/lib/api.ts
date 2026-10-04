@@ -87,7 +87,7 @@ export type RegistrationField = {
 
 export type EventDivisionName = "BEGINNER" | "NOVICE" | "LOW_INTERMEDIATE" | "HIGH_INTERMEDIATE";
 export type EventDivision = { name: EventDivisionName; capacity: number; registered: number };
-export type EventPaymentMethod = "QR" | "IN_PERSON";
+export type EventPaymentMethod = "QR" | "IN_PERSON" | "PAYMONGO";
 
 export type PostHost = {
   id: string;
@@ -101,6 +101,7 @@ export type PostSummary = {
   description: string;
   location: string;
   amount?: string | null;
+  entryFeeCents?: number | null;
   capacity?: number | null;
   divisions?: EventDivision[];
   paymentMethods?: EventPaymentMethod[];
@@ -125,6 +126,7 @@ export type PostDetail = {
   paymentInstructions?: string | null;
   location: string;
   amount?: string | null;
+  entryFeeCents?: number | null;
   capacity?: number | null;
   divisions: EventDivision[];
   paymentMethods: EventPaymentMethod[];
@@ -159,6 +161,7 @@ export type PostDetail = {
     hasPaymentProof: boolean;
     division?: EventDivisionName | null;
     paymentMethod?: EventPaymentMethod | null;
+    paymentStatus?: "UNPAID" | "PENDING" | "PAID" | "VERIFIED" | "FAILED" | "REFUNDED";
   } | null;
   tournamentId?: string | null;
 };

@@ -73,6 +73,33 @@ enum SubscriptionStatus {
   SUSPENDED
 }
 
+enum EventPaymentStatus {
+  UNPAID
+  PENDING
+  PAID
+  VERIFIED
+  FAILED
+  REFUNDED
+}
+
+enum PaymentLedgerType {
+  EVENT_PAYMENT
+  OFFLINE_EVENT_PAYMENT
+  PLATFORM_COMMISSION
+  ACCRUED_PLATFORM_COMMISSION
+  PROCESSING_FEE
+  ORGANIZER_PAYOUT
+  SUBSCRIPTION_PAYMENT
+  REFUND
+}
+
+enum OrganizerPayoutStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+}
+
 model User {
   id              String   @id @default(uuid())
   username        String   @unique
@@ -88,6 +115,8 @@ model User {
   subscriptionPaymentProofStoredFile String?
   subscriptionPaymentSubmittedAt DateTime?
   subscriptionPaymentStatus RegistrationStatus?
+  subscriptionPaymentAmountCents Int?
+  payoutAccountEncrypted String?
 
   ownedTournaments Tournament[]
   playerProfiles   Player[]
@@ -99,6 +128,9 @@ model User {
   notifications    Notification[]
   profileVisitsReceived ProfileVisit[] @relation("ProfileVisitProfile")
   profileVisitsMade ProfileVisit[] @relation("ProfileVisitVisitor")
+  paymentVerifications RegistrationSubmission[] @relation("PaymentVerifier")
+  organizerPayouts OrganizerPayout[]
+  subscriptionLedgerEntries PaymentLedgerEntry[] @relation("SubscriptionPaymentEntries")
 }
 
 model ProfileVisit {
@@ -132,6 +164,7 @@ model PlatformSetting {
   id                    String   @id @default("platform")
   monthlyPriceCents     Int      @default(0)
   subscriptionPaymentInstructions String?
+  eventCommissionBps    Int      @default(500)
   updatedAt             DateTime @updatedAt
 }
 
@@ -151,6 +184,7 @@ model TournamentPost {
   paymentQrStoredFile String?
   registrationLink   String?
   registrationFields Json?
+  entryFeeCents      Int?
   createdAt          DateTime @default(now())
   tournamentId       String?
   tournament         Tournament? @relation(fields: [tournamentId], references: [id], onDelete: SetNull)
@@ -198,6 +232,75 @@ model RegistrationSubmission {
   @@unique([postId, participantUserId])
   @@index([postId, userId])
   @@index([postId, status])
+  paymentStatus EventPaymentStatus @default(UNPAID)
+  paymentVerifiedAt DateTime?
+  paymentVerifiedById String?
+  paymentVerifiedBy User? @relation("PaymentVerifier", fields: [paymentVerifiedById], references: [id], onDelete: SetNull)
+  paymentVerificationNote String?
+  payments EventPayment[]
+  ledgerEntries PaymentLedgerEntry[]
+}
+
+model EventPayment {
+  id                    String   @id @default(uuid())
+  registrationId        String
+  registration          RegistrationSubmission @relation(fields: [registrationId], references: [id], onDelete: Cascade)
+  referenceNumber       String   @unique
+  providerCheckoutId    String?  @unique
+  providerCheckoutUrl   String?
+  providerPaymentId     String?  @unique
+  status                EventPaymentStatus @default(PENDING)
+  grossAmountCents      Int
+  commissionCents       Int
+  processingFeeCents    Int      @default(0)
+  currency              String   @default("PHP")
+  paidAt                DateTime?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  ledgerEntries         PaymentLedgerEntry[]
+
+  @@index([registrationId, status])
+  @@index([status, createdAt])
+}
+
+model PaymentLedgerEntry {
+  id                    String   @id @default(uuid())
+  idempotencyKey        String   @unique
+  type                  PaymentLedgerType
+  amountCents           Int
+  currency              String   @default("PHP")
+  description           String
+  eventPaymentId        String?
+  eventPayment          EventPayment? @relation(fields: [eventPaymentId], references: [id], onDelete: SetNull)
+  registrationId        String?
+  registration           RegistrationSubmission? @relation(fields: [registrationId], references: [id], onDelete: SetNull)
+  payoutId              String?
+  payout                OrganizerPayout? @relation(fields: [payoutId], references: [id], onDelete: SetNull)
+  userId                 String?
+  user                   User? @relation("SubscriptionPaymentEntries", fields: [userId], references: [id], onDelete: SetNull)
+  createdAt             DateTime @default(now())
+
+  @@index([type, createdAt])
+  @@index([registrationId])
+}
+
+model OrganizerPayout {
+  id                    String   @id @default(uuid())
+  organizerId           String
+  organizer             User     @relation(fields: [organizerId], references: [id], onDelete: Restrict)
+  tournamentId          String   @unique
+  tournament            Tournament @relation(fields: [tournamentId], references: [id], onDelete: Restrict)
+  amountCents           Int
+  transferFeeCents      Int      @default(0)
+  currency              String   @default("PHP")
+  status                OrganizerPayoutStatus @default(PENDING)
+  providerTransferId    String?  @unique
+  failureReason         String?
+  requestedAt           DateTime @default(now())
+  paidAt                DateTime?
+  ledgerEntries         PaymentLedgerEntry[]
+
+  @@index([organizerId, status])
 }
 
 model Player {
@@ -251,6 +354,7 @@ model Tournament {
   raffleDraws RaffleDraw[]
   auditLogs   AuditLog[]
   posts       TournamentPost[]
+  organizerPayout OrganizerPayout?
 
   @@index([ownerId])
 }

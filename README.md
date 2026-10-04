@@ -178,9 +178,41 @@ before releasing profile visitor changes.
   then perform a real restore drill before the event. Keep application logs and
   database backups in separate systems; the server emits JSON request/error
   logs suitable for Railway or another log collector.
-- Event entry payment is currently manual and goes directly to the organizer;
-  organizers publish instructions and review proof or verify in person.
-- Platform revenue is currently a configurable monthly PHP organizer
-  subscription, also verified manually by the platform superadmin. Set the
-  price and payment instructions in the platform console. Online checkout,
-  per-registration platform fees, and automated organizer payouts are not integrated.
+- Paid event registrations can use PayMongo-hosted checkout. The default
+  platform commission is 5% and is deducted from the organizer's online event
+  balance. Organizers may also offer QR or in-person payments; QR payments
+  require uploaded proof and an explicit organizer verification, while
+  in-person payments require explicit verification but no upload. Offline
+  amounts go directly to the organizer, so their commission is reported as an
+  accrued receivable and is not automatically collected by Playwell.
+- Superadmin-approved organizer renewals are also recorded in the finance
+  ledger using the monthly price snapshot captured when proof was submitted.
+- After results are finalized and pending registrations are resolved, a
+  superadmin can request one PayMongo bank transfer for the event's available
+  balance from **Platform Console → Event finance**. PayMongo must confirm the
+  transfer through the configured callback before it is recorded as paid.
+- Configure the following backend environment variables before enabling
+  payments: `PAYMONGO_SECRET_KEY`, `PAYMONGO_WEBHOOK_SECRET`,
+  `PUBLIC_APP_URL`, `PAYMONGO_SOURCE_ACCOUNT_NUMBER`,
+  `PAYMONGO_SOURCE_ACCOUNT_NAME`, `PAYMONGO_SOURCE_ACCOUNT_BIC`,
+  `PAYMONGO_PAYOUT_CALLBACK_URL`, `PAYMONGO_PAYOUT_CALLBACK_TOKEN`, and
+  `PAYOUT_ENCRYPTION_KEY`. Keep provider credentials and encryption keys out
+  of source control. Generate the encryption key with
+  `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+  and use a separate long random callback token. Preserve both keys across
+  deployments; rotating the encryption key requires a planned re-encryption of
+  saved organizer bank details.
+- Register the public `/api/webhooks/paymongo` URL in PayMongo and enable
+  checkout payment events. Set `PAYMONGO_PAYOUT_CALLBACK_URL` to the HTTPS
+  base path `/api/webhooks/paymongo/payout`; the server appends the secret
+  callback token. Confirm the PayMongo account has checkout and wallet-transfer
+  capabilities, and configure its source wallet account exactly as PayMongo
+  reports it. Test with PayMongo test credentials before switching to live
+  credentials. Do not use production credentials or issue a real transfer
+  during development.
+- Organizer subscription renewals are still manually submitted and approved;
+  online subscription checkout and automatic recurring billing are not
+  implemented. PayMongo must enable a supported hosted recurring flow before
+  this can be automated safely. Refund automation and a formal accounting or
+  tax export are also not included.
+- Apply the pending Prisma migrations before deploying these payment changes.
