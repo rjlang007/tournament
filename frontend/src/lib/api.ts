@@ -26,6 +26,36 @@ export type PublicProfile = {
   subscriptionStatus?: "TRIAL" | "ACTIVE" | "EXPIRED" | "SUSPENDED" | null;
   createdAt?: string | Date;
   memberSince?: string | Date;
+  playerStats?: PlayerLeaderboardRow;
+  visitors?: ProfileVisitor[];
+};
+
+export type ProfileVisitor = {
+  id: string;
+  username: string;
+  avatarUrl: string;
+  visitedAt: string;
+};
+
+export type PlayerLeaderboardRow = {
+  userId: string;
+  username: string;
+  avatarUrl: string | null;
+  openPlayPoints: number;
+  tournamentPoints: number;
+  overallPoints: number;
+  wins: number;
+  losses: number;
+  gamesPlayed: number;
+  winRate: number;
+  podiums: number;
+  eventsPlayed: number;
+};
+
+export type GlobalLeaderboards = {
+  openPlay: PlayerLeaderboardRow[];
+  tournaments: PlayerLeaderboardRow[];
+  overall: PlayerLeaderboardRow[];
 };
 
 export type RegistrationFieldType = "text" | "textarea" | "number" | "email" | "phone";

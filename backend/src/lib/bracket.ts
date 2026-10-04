@@ -351,9 +351,72 @@ export async function generateFromExistingEntries(bracketId: string) {
  * position or match history.
  */
 export async function substituteBracketPlayer(entryId: string, slot: "A" | "B", newPlayerId: string) {
-  return prisma.bracketEntry.update({
-    where: { id: entryId },
-    data: slot === "A" ? { playerAId: newPlayerId } : { playerBId: newPlayerId },
+  return prisma.$transaction(async (tx) => {
+    const entry = await tx.bracketEntry.findUniqueOrThrow({
+      where: { id: entryId },
+      include: { bracket: true },
+    });
+    const previousPlayerId = slot === "A" ? entry.playerAId : entry.playerBId;
+    if (previousPlayerId === newPlayerId) return { kind: "unchanged" as const };
+    const previousPlayer = previousPlayerId
+      ? await tx.player.findUnique({ where: { id: previousPlayerId }, select: { id: true, name: true } })
+      : null;
+
+    const replacement = await tx.player.findFirst({
+      where: { id: newPlayerId, tournamentId: entry.bracket.tournamentId, status: { not: "LEFT" } },
+      select: { id: true, name: true },
+    });
+    if (!replacement) return { kind: "player-not-found" as const };
+
+    const referencedMatches = await tx.bracketMatch.findMany({
+      where: { bracketId: entry.bracketId, OR: [{ entryAId: entry.id }, { entryBId: entry.id }] },
+      include: { game: { select: { id: true, status: true } } },
+    });
+    const futureMatches = referencedMatches.filter((match) => !["FINISHED", "IN_PROGRESS", "PAUSED"].includes(match.game?.status ?? ""));
+    if (futureMatches.length === 0) return { kind: "no-future-matches" as const };
+
+    const updatedEntry = await tx.bracketEntry.create({
+      data: {
+        bracketId: entry.bracketId,
+        seed: entry.seed,
+        teamName: entry.teamName,
+        playerAId: slot === "A" ? newPlayerId : entry.playerAId,
+        playerBId: slot === "B" ? newPlayerId : entry.playerBId,
+      },
+    });
+
+    for (const match of futureMatches) {
+      const matchUpdate: { entryAId?: string; entryBId?: string; winnerEntryId?: string | null } = {};
+      if (match.entryAId === entry.id) matchUpdate.entryAId = updatedEntry.id;
+      if (match.entryBId === entry.id) matchUpdate.entryBId = updatedEntry.id;
+      if (match.winnerEntryId === entry.id) matchUpdate.winnerEntryId = updatedEntry.id;
+      await tx.bracketMatch.update({ where: { id: match.id }, data: matchUpdate });
+
+      if (match.game) {
+        const replacementAlreadyInGame = await tx.gamePlayer.findFirst({ where: { gameId: match.game.id, playerId: newPlayerId } });
+        if (previousPlayer) {
+          const oldGamePlayer = await tx.gamePlayer.findFirst({ where: { gameId: match.game.id, playerId: previousPlayer.id } });
+          if (oldGamePlayer && replacementAlreadyInGame) {
+            await tx.gamePlayer.delete({ where: { id: oldGamePlayer.id } });
+          } else if (oldGamePlayer) {
+            await tx.gamePlayer.update({ where: { id: oldGamePlayer.id }, data: { playerId: newPlayerId } });
+          }
+        } else if (!replacementAlreadyInGame) {
+          await tx.gamePlayer.create({
+            data: { gameId: match.game.id, playerId: newPlayerId, team: match.entryAId === entry.id ? "A" : "B" },
+          });
+        }
+      }
+    }
+
+    return {
+      kind: "updated" as const,
+      entry: updatedEntry,
+      previousPlayerId: previousPlayer?.id ?? null,
+      previousPlayerName: previousPlayer?.name ?? null,
+      playerName: replacement.name,
+      affectedMatches: futureMatches.length,
+    };
   });
 }
 

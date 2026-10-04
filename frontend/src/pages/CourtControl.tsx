@@ -336,7 +336,7 @@ export default function CourtControl() {
   const finalizeAnyway = async () => {
     setFinalizeBusy(true);
     try {
-      await api.post(`/tournaments/${tournamentId}/finalize`);
+      await api.post(`/tournaments/${tournamentId}/finalize`, { confirmed: true });
       closeFinalize();
       load();
     } finally {
@@ -383,7 +383,7 @@ export default function CourtControl() {
   const confirmManualOrder = async () => {
     setFinalizeBusy(true);
     try {
-      await api.post(`/tournaments/${tournamentId}/finalize`, { manualOrder });
+      await api.post(`/tournaments/${tournamentId}/finalize`, { manualOrder, confirmed: true });
       closeFinalize();
       load();
     } finally {
@@ -421,7 +421,7 @@ export default function CourtControl() {
               ) : null}
             </div>
           ) : (
-            <div className="text-sm text-white/30">No schedule set - results won't auto-finalize.</div>
+            <div className="text-sm text-white/30">No schedule set - results stay live until an organizer confirms finalization.</div>
           )}
         </div>
         <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
@@ -435,6 +435,7 @@ export default function CourtControl() {
           <button onClick={openFinalizeCheck} className="flex-1 rounded-xl bg-red-500/80 px-3 py-1.5 text-sm font-semibold sm:flex-none">Finalize now</button>
         </div>
       </div>
+      {remainingMs !== null && remainingMs <= 0 && !tournament?.resultsFinalizedAt && <div role="status" className="-mt-4 mb-6 rounded-lg border border-ball/25 bg-ball/5 px-4 py-3 text-sm text-white/75">Scheduled end reached. Review the standings, then confirm finalization when you’re ready.</div>}
 
       {auditOpen && (
         <div className="mobile-modal-shell" onClick={() => setAuditOpen(false)}>
@@ -466,7 +467,7 @@ export default function CourtControl() {
               onChange={(e) => setScheduleStart(e.target.value)}
               className="w-full mt-1 mb-4 bg-white/5 border border-white/10 rounded-lg px-3 py-2"
             />
-            <label className="text-xs uppercase tracking-wide text-white/50">End (auto-finalize time)</label>
+            <label className="text-xs uppercase tracking-wide text-white/50">Scheduled end</label>
             <input
               type="datetime-local"
               value={scheduleEnd}

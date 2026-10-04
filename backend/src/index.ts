@@ -6,7 +6,6 @@ import { createServer } from "http";
 import path from "path";
 import { prisma } from "./lib/prisma";
 import { initSocket, broadcastTournamentUpdate } from "./socket";
-import { computeLeaderboard, countUnfinishedGames } from "./lib/leaderboard";
 
 import { tournamentsRouter } from "./routes/tournaments";
 import { playersRouter } from "./routes/players";
@@ -150,6 +149,7 @@ app.use("/api/brackets", ...tournamentAccess, bracketRouter);
 
 const frontendDist = path.resolve(__dirname, "../../frontend/dist");
 app.use(express.static(frontendDist));
+app.use("/default-avatars", express.static(path.resolve(__dirname, "../public/default-avatars")));
 app.use("/uploads/avatars", express.static(path.resolve(__dirname, "../uploads/avatars")));
 app.use("/uploads/tournaments", express.static(path.resolve(__dirname, "../uploads/tournaments")));
 app.use("/uploads/payment-qrs", express.static(path.resolve(__dirname, "../uploads/payment-qrs")));
@@ -167,36 +167,6 @@ app.use((error: unknown, _req: express.Request, res: express.Response, _next: ex
 
 const httpServer = createServer(app);
 initSocket(httpServer);
-
-// Finalize tournaments shortly after their scheduled end. Live countdowns are
-// calculated by the board endpoint and updated in each browser, so this loop
-// does not perform a database write every second or trigger full page reloads.
-setInterval(async () => {
-  // Auto-finalize: once a tournament's scheduled end time (e.g. 9:00 PM)
-  // has passed and the operator hasn't extended it, record the current
-  // standings as official and mark the tournament COMPLETED. Games already
-  // in progress are left alone - staff can still finish them, and the
-  // operator can hit "Extend" at any time to reopen and push the cutoff
-  // forward for players who want to keep going.
-  const now = new Date();
-  const dueTournaments = await prisma.tournament.findMany({
-    where: {
-      status: "ACTIVE",
-      scheduledEnd: { lte: now },
-      resultsFinalizedAt: null,
-      games: { none: { status: { in: ["UPCOMING", "READY", "IN_PROGRESS", "PAUSED"] } } },
-    },
-  });
-  for (const t of dueTournaments) {
-    if (await countUnfinishedGames(t.id) > 0) continue;
-    const standings = await computeLeaderboard(t.id);
-    const finalized = await prisma.tournament.updateMany({
-      where: { id: t.id, status: "ACTIVE", resultsFinalizedAt: null },
-      data: { status: "COMPLETED", resultsFinalizedAt: now, finalStandings: standings as any },
-    });
-    if (finalized.count === 1) broadcastTournamentUpdate(t.id, "tournament:changed");
-  }
-}, 5000);
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 httpServer.listen(PORT, () => {

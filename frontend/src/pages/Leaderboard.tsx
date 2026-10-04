@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { api, LeaderboardRow } from "../lib/api";
 import { useTournamentSocket } from "../lib/socket";
+import TournamentViewsNav from "../components/TournamentViewsNav";
 
 type FinalResult = {
   tournamentName: string;
@@ -10,19 +11,15 @@ type FinalResult = {
   standings: LeaderboardRow[] | null;
 };
 
-function downloadResultsImage(
-  tournamentName: string,
-  rows: LeaderboardRow[],
-  format: "png" | "jpeg",
-) {
+function renderResultsCanvas(tournamentName: string, rows: LeaderboardRow[]): HTMLCanvasElement | null {
   const width = 1400;
   const rowHeight = 58;
-  const height = 300 + rows.length * rowHeight;
+  const height = 400 + rows.length * rowHeight;
   const canvas = document.createElement("canvas");
   canvas.width = width;
   canvas.height = height;
   const context = canvas.getContext("2d");
-  if (!context) return;
+  if (!context) return null;
 
   const background = context.createLinearGradient(0, 0, width, height);
   background.addColorStop(0, "#071e2b");
@@ -30,24 +27,30 @@ function downloadResultsImage(
   context.fillStyle = background;
   context.fillRect(0, 0, width, height);
 
-  context.fillStyle = "#d9f99d";
-  context.font = "700 28px Georgia, serif";
-  context.fillText("TOURNAMENT RESULTS", 72, 72);
+  context.fillStyle = "#d9f99e";
+  context.font = "700 24px Arial, sans-serif";
+  context.fillText("PLAYWELL", 72, 58);
+  context.fillStyle = "#b8d4d0";
+  context.font = "400 16px Arial, sans-serif";
+  context.fillText("FIND A GAME. BRING THE FUN.", 72, 86);
+  context.fillStyle = "#d9f99e";
+  context.font = "700 24px Georgia, serif";
+  context.fillText("FINAL STANDINGS", 72, 142);
   context.fillStyle = "#ffffff";
   context.font = "700 58px Georgia, serif";
-  context.fillText("Congratulations!", 72, 145);
+  context.fillText("Congratulations!", 72, 214);
   context.fillStyle = "#b8d4d0";
   context.font = "400 25px Arial, sans-serif";
-  context.fillText(tournamentName, 72, 188);
+  context.fillText(tournamentName, 72, 255);
 
   const winner = rows[0];
   if (winner) {
     context.fillStyle = "#d9f99d";
     context.font = "700 24px Arial, sans-serif";
-    context.fillText(`Champion: ${winner.name}`, 72, 238);
+    context.fillText(`Champion: ${winner.name}`, 72, 302);
   }
 
-  const tableTop = 278;
+  const tableTop = 330;
   context.fillStyle = "rgba(255, 255, 255, 0.12)";
   context.fillRect(52, tableTop, width - 104, 48);
   context.fillStyle = "#b8d4d0";
@@ -72,16 +75,41 @@ function downloadResultsImage(
     context.fillText(`${row.winPct}%`, 1170, y + 36);
   });
 
-  const mime = format === "png" ? "image/png" : "image/jpeg";
-  const extension = format === "png" ? "png" : "jpg";
+  context.fillStyle = "#b8d4d0";
+  context.font = "400 15px Arial, sans-serif";
+  context.fillText("Playwell · Find a game. Bring the fun.", 72, height - 24);
+  return canvas;
+}
+
+function resultsFilename(tournamentName: string) {
+  return `${tournamentName.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "tournament"}-results.png`;
+}
+
+function downloadResultsImage(tournamentName: string, rows: LeaderboardRow[]) {
+  const canvas = renderResultsCanvas(tournamentName, rows);
+  if (!canvas) return;
   canvas.toBlob((blob) => {
     if (!blob) return;
+    const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = URL.createObjectURL(blob);
-    link.download = `${tournamentName.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "tournament"}-results.${extension}`;
+    link.href = url;
+    link.download = resultsFilename(tournamentName);
     link.click();
-    URL.revokeObjectURL(link.href);
-  }, mime, format === "jpeg" ? 0.95 : undefined);
+    URL.revokeObjectURL(url);
+  }, "image/png");
+}
+
+async function shareResultsImage(tournamentName: string, rows: LeaderboardRow[]) {
+  const canvas = renderResultsCanvas(tournamentName, rows);
+  if (!canvas) return;
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/png"));
+  if (!blob) return;
+  const file = new File([blob], resultsFilename(tournamentName), { type: "image/png" });
+  if (navigator.share && navigator.canShare?.({ files: [file] })) {
+    await navigator.share({ title: `${tournamentName} final results`, text: "Find a game. Bring the fun.", files: [file] });
+    return;
+  }
+  downloadResultsImage(tournamentName, rows);
 }
 
 export default function Leaderboard() {
@@ -90,6 +118,7 @@ export default function Leaderboard() {
   const [final, setFinal] = useState<FinalResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [shareError, setShareError] = useState<string | null>(null);
 
   const load = () => {
     setError(null);
@@ -110,10 +139,19 @@ export default function Leaderboard() {
   const totalGames = rows.reduce((sum, row) => sum + row.gamesPlayed, 0);
   const leader = rows[0];
   const topWinRate = rows.reduce((best, row) => (row.winPct > best.winPct ? row : best), rows[0] ?? { winPct: 0, name: "—" } as LeaderboardRow);
-  const exportName = final?.tournamentName ?? "PADOL PICKLEBALL COURT";
+  const exportName = final?.tournamentName ?? "Playwell";
+  const onShareResults = async () => {
+    setShareError(null);
+    try {
+      await shareResultsImage(exportName, rows);
+    } catch (shareFailure: any) {
+      if (shareFailure?.name !== "AbortError") setShareError("Could not share the results image.");
+    }
+  };
 
   return (
     <div className="leaderboard-page mx-auto max-w-5xl space-y-6">
+      {tournamentId && <TournamentViewsNav tournamentId={tournamentId} />}
       <header className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <div className="text-[10px] uppercase tracking-[0.25em] text-white/45">Results</div>
@@ -121,7 +159,8 @@ export default function Leaderboard() {
         </div>
         <div className="leaderboard-actions flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => window.print()} className="secondary-button px-3 py-2 text-xs">Print standings</button>
-          <button type="button" onClick={() => downloadResultsImage(exportName, rows, "png")} disabled={rows.length === 0} className="action-button px-3 py-2 text-xs">Save PNG</button>
+          <button type="button" onClick={() => downloadResultsImage(exportName, rows)} disabled={rows.length === 0} className="secondary-button px-3 py-2 text-xs">Save PNG</button>
+          <button type="button" onClick={onShareResults} disabled={rows.length === 0} className="action-button px-3 py-2 text-xs">Share results</button>
           {isFinal && final?.finalizedAt && (
             <div className="rounded-full border border-red-400/20 bg-red-500/10 px-3 py-1.5 text-[10px] uppercase tracking-[0.2em] text-red-300">
               Recorded {new Date(final.finalizedAt).toLocaleString(undefined, {
@@ -133,6 +172,7 @@ export default function Leaderboard() {
       </header>
 
       {error && <div className="error-panel flex flex-wrap items-center justify-between gap-3">{error}<button type="button" onClick={load} className="secondary-button px-3 py-1.5 text-xs">Retry</button></div>}
+      {shareError && <p role="alert" className="text-sm text-advance">{shareError}</p>}
 
       {loading ? <LeaderboardSkeleton /> : <>
 

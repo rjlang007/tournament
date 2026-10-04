@@ -6,6 +6,7 @@ import { prisma } from "../lib/prisma";
 import { attachUser, requireAuth, AuthedRequest } from "../lib/auth";
 import { uploadAvatar, AVATAR_DIR } from "../lib/uploads";
 import { defaultAvatarUrl, isDefaultAvatarKey, DEFAULT_AVATAR_KEYS } from "../lib/defaultAvatars";
+import { getPlayerStats } from "../lib/playerLeaderboard";
 
 export const usersRouter = Router();
 
@@ -40,7 +41,38 @@ usersRouter.get("/default-avatars", attachUser, requireAuth, (_req, res) => {
 usersRouter.get("/:username", attachUser, requireAuth, async (req, res) => {
   const user = await prisma.user.findUnique({ where: { username: req.params.username } });
   if (!user) return res.status(404).json({ error: "User not found." });
-  res.json(toPublicProfile(user));
+  const viewerId = (req as AuthedRequest).userId;
+  if (viewerId && viewerId !== user.id) {
+    await prisma.profileVisit.upsert({
+      where: { profileId_visitorId: { profileId: user.id, visitorId: viewerId } },
+      create: { profileId: user.id, visitorId: viewerId },
+      update: { visitedAt: new Date() },
+    });
+  }
+
+  const [playerStats, visits] = await Promise.all([
+    getPlayerStats(user.id),
+    viewerId === user.id
+      ? prisma.profileVisit.findMany({
+          where: { profileId: user.id },
+          orderBy: { visitedAt: "desc" },
+          include: { visitor: { select: { id: true, username: true, avatarUrl: true, defaultAvatarKey: true } } },
+        })
+      : Promise.resolve(null),
+  ]);
+
+  res.json({
+    ...toPublicProfile(user),
+    playerStats,
+    ...(visits ? {
+      visitors: visits.map(({ visitor, visitedAt }) => ({
+        id: visitor.id,
+        username: visitor.username,
+        avatarUrl: visitor.avatarUrl ?? defaultAvatarUrl(visitor.defaultAvatarKey as any),
+        visitedAt,
+      })),
+    } : {}),
+  });
 });
 
 const updateProfileSchema = z.object({

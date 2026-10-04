@@ -23,6 +23,7 @@ COPY --from=backend-build /app/backend/package*.json ./
 COPY --from=backend-build /app/backend/node_modules ./node_modules
 COPY --from=backend-build /app/backend/prisma ./prisma
 COPY --from=backend-build /app/backend/dist ./dist
+COPY --from=backend-build /app/backend/public ./public
 COPY --from=frontend-build /app/frontend/dist /app/frontend/dist
 EXPOSE 4000
 CMD ["sh", "-c", "npx prisma migrate deploy && npm run start"]

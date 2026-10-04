@@ -97,6 +97,20 @@ model User {
   registrations    RegistrationSubmission[]
   participantRegistrations RegistrationSubmission[] @relation("RegistrationParticipant")
   notifications    Notification[]
+  profileVisitsReceived ProfileVisit[] @relation("ProfileVisitProfile")
+  profileVisitsMade ProfileVisit[] @relation("ProfileVisitVisitor")
+}
+
+model ProfileVisit {
+  id        String   @id @default(uuid())
+  profileId String
+  profile   User     @relation("ProfileVisitProfile", fields: [profileId], references: [id], onDelete: Cascade)
+  visitorId String
+  visitor   User     @relation("ProfileVisitVisitor", fields: [visitorId], references: [id], onDelete: Cascade)
+  visitedAt DateTime @default(now())
+
+  @@unique([profileId, visitorId])
+  @@index([profileId, visitedAt])
 }
 
 model Notification {
@@ -221,8 +235,8 @@ model Tournament {
   locationLongitude Float?
 
   // Operator-set tournament window, e.g. 4:00 PM - 9:00 PM. When
-  // scheduledEnd passes, results are auto-recorded into finalStandings
-  // unless the operator extends scheduledEnd first (see /extend route).
+  // scheduledEnd is a reminder for the operator to review results; final
+  // standings are recorded only after explicit operator confirmation.
   scheduledStart     DateTime?
   scheduledEnd       DateTime?
   resultsFinalizedAt DateTime?

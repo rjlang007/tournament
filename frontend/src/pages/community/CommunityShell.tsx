@@ -18,9 +18,15 @@ export default function CommunityShell() {
   return (
     <div className="min-h-screen bg-neutral-950">
       <nav className="flex flex-wrap items-center gap-2 border-b border-white/10 bg-court-bg/40 px-4 py-3 sm:px-6 sm:py-4">
-        <Link to="/community" className="mr-2 w-full font-display text-xl font-bold text-ball sm:mr-4 sm:w-auto">🏆 Event Board</Link>
+        <Link to="/community" className="mr-2 flex w-full flex-col font-display font-bold text-ball sm:mr-4 sm:w-auto">
+          <span className="text-xl">Playwell</span>
+          <span className="text-[9px] font-normal uppercase tracking-[0.18em] text-white/45">Find a game. Bring the fun.</span>
+        </Link>
         <NavLink to="/community" end className={linkClass}>
           Browse
+        </NavLink>
+        <NavLink to="/community/leaderboard" className={linkClass}>
+          Player rankings
         </NavLink>
         {user && (
           <>

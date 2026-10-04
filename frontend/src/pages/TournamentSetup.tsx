@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, Tournament } from "../lib/api";
 import { useAuth } from "../context/AuthContext";
+import PublicEventListings from "../components/PublicEventListings";
 
 export default function TournamentSetup() {
   const { user } = useAuth();
@@ -23,7 +24,10 @@ export default function TournamentSetup() {
   };
 
   if (user?.role === "PLAYER" || !user) {
-    return <PlayerTournamentDirectory tournaments={tournaments} joined={joined} canJoin={!!user} onJoin={joinTournament} onOpen={(id) => navigate(`/t/${id}/kiosk`)} />;
+    return <>
+      <PublicEventListings />
+      <PlayerTournamentDirectory tournaments={tournaments} joined={joined} canJoin={!!user} onJoin={joinTournament} onOpen={(id) => navigate(`/t/${id}/kiosk`)} />
+    </>;
   }
 
   const create = async () => {
@@ -83,13 +87,16 @@ export default function TournamentSetup() {
   };
 
   return (
+    <>
+    <PublicEventListings />
     <div className="min-h-screen px-4 py-10 sm:px-6 lg:px-8">
       <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[1.2fr_0.8fr]">
         <section className="glass-panel overflow-hidden p-6 sm:p-8">
           <div className="mb-8 flex items-center justify-between gap-3">
             <div>
               <div className="text-[10px] uppercase tracking-[0.28em] text-ball/80">Your court, in motion</div>
-              <h1 className="brand-lockup mt-2 font-display text-4xl font-bold tracking-tight text-ball sm:text-5xl">PADOL PICKLEBALL COURT</h1>
+              <h1 className="brand-lockup mt-2 font-display text-4xl font-bold tracking-tight text-ball sm:text-5xl">Playwell</h1>
+              <p className="mt-1 font-display text-sm font-semibold text-white/70">Find a game. Bring the fun.</p>
             </div>
             <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
               <Link to="/community" className="secondary-button px-3 py-2 text-xs">Event board</Link>
@@ -101,7 +108,7 @@ export default function TournamentSetup() {
           {user?.role === "ADMIN" && user.subscriptionStatus === "SUSPENDED" && <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-advance/30 bg-advance/10 px-4 py-3 text-sm text-white/80"><span>Organizer access is paused until renewal is verified.</span><Link to="/community/billing" className="font-semibold text-ball">Renew subscription</Link></div>}
 
           <p className="mb-8 max-w-lg text-sm leading-6 text-white/65">
-            Run smooth, professional pickleball tournaments with player registration, live court control, bracket tracking, and leaderboard updates in one modern workspace.
+            New to pickleball or ready for your next match? Find welcoming open play, join tournaments, and meet local players. Playwell makes getting on court simple and fun.
           </p>
 
           {user?.role === "ADMIN" || user?.role === "SUPERADMIN" ? <div className="space-y-5">
@@ -210,6 +217,7 @@ export default function TournamentSetup() {
         </aside>
       </div>
     </div>
+    </>
   );
 }
 

@@ -9,6 +9,7 @@ import CourtControl from "./pages/CourtControl";
 import Kiosk from "./pages/Kiosk";
 import Leaderboard from "./pages/Leaderboard";
 import BracketView from "./pages/BracketView";
+import TournamentChanges from "./pages/TournamentChanges";
 import TournamentLogin from "./pages/TournamentLogin";
 import TournamentLocation from "./pages/TournamentLocation";
 import Register from "./pages/community/Register";
@@ -23,6 +24,7 @@ import CreatePost from "./pages/community/CreatePost";
 import PostDetail from "./pages/community/PostDetail";
 import Profile from "./pages/community/Profile";
 import Members from "./pages/community/Members";
+import CommunityLeaderboard from "./pages/community/CommunityLeaderboard";
 import Notifications from "./pages/community/Notifications";
 import CommunityLogin from "./pages/community/Login";
 import { Privacy, Terms } from "./pages/Legal";
@@ -62,13 +64,14 @@ function Shell() {
               🏓
             </div>
             <div>
-              <div className="brand-lockup font-display text-xl font-bold tracking-wide text-ball">PADOL PICKLEBALL COURT</div>
-              <div className="text-[10px] uppercase tracking-[0.24em] text-white/45">Court Operations</div>
+              <div className="brand-lockup font-display text-xl font-bold tracking-wide text-ball">Playwell</div>
+              <div className="text-[10px] uppercase tracking-[0.24em] text-white/45">Find a game. Bring the fun.</div>
             </div>
           </Link>
 
           <div className="mobile-nav-links flex min-w-0 flex-nowrap items-center gap-1 overflow-x-auto pb-1 sm:flex-wrap sm:gap-2">
             <NavLink to="/community" className={linkClass}>Event board</NavLink>
+            <NavLink to="/community/leaderboard" className={linkClass}>Player rankings</NavLink>
             {user && (user.role === "ADMIN" || user.role === "SUPERADMIN") && <NavLink to={`${base}/registration`} className={linkClass}>Registration</NavLink>}
             {user && (user.role === "ADMIN" || user.role === "SUPERADMIN") && <NavLink to={`${base}/courts`} className={linkClass}>Court Control</NavLink>}
             {user && (user.role === "ADMIN" || user.role === "SUPERADMIN") && <NavLink to={`${base}/location`} className={linkClass}>Location</NavLink>}
@@ -91,6 +94,7 @@ function Shell() {
             <Route path="kiosk" element={<Kiosk />} />
             <Route path="leaderboard" element={<Leaderboard />} />
             <Route path="bracket" element={<BracketView />} />
+            <Route path="changes" element={user ? <TournamentChanges /> : <Navigate to="/login" state={{ from: `${base}/changes` }} replace />} />
             <Route path="raffle" element={<Raffle />} />
           </Routes>
         </main>
@@ -115,6 +119,7 @@ export default function App() {
         <Route index element={<Feed />} />
         <Route path="new" element={<CreatePost />} />
         <Route path="billing" element={<OrganizerBilling />} />
+        <Route path="leaderboard" element={<CommunityLeaderboard />} />
         <Route path=":postId/edit" element={<CreatePost />} />
         <Route path=":postId" element={<PostDetail />} />
         <Route path="profile/:username" element={<Profile />} />

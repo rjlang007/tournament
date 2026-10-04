@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { api, Player } from "../lib/api";
 import { useTournamentSocket } from "../lib/socket";
 import { useAuth } from "../context/AuthContext";
+import TournamentViewsNav from "../components/TournamentViewsNav";
 
 type BracketFormat = "SINGLE_ELIMINATION" | "DOUBLE_ELIMINATION" | "ROUND_ROBIN";
 
@@ -49,6 +50,7 @@ export default function BracketView() {
   const [standings, setStandings] = useState<StandingRow[]>([]);
   const [generatedPlayerCount, setGeneratedPlayerCount] = useState<number | null>(null);
   const [draggedPlayerId, setDraggedPlayerId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   useEffect(() => {
     api.get("/players", { params: { tournamentId } }).then((r) => setPlayers(r.data));
@@ -67,7 +69,7 @@ export default function BracketView() {
     api.get(`/brackets/${bracketId}/entries`).then((r) => setEntries(r.data));
     api.get(`/brackets/${bracketId}/standings`).then((r) => setStandings(r.data));
   };
-  useTournamentSocket(tournamentId, ["bracket:generated", "games:changed", "players:changed"], () => {
+  useTournamentSocket(tournamentId, ["bracket:generated", "bracket:changed", "games:changed", "players:changed"], () => {
     loadMatches();
     api.get("/players", { params: { tournamentId } }).then((r) => setPlayers(r.data));
     api.get("/courts", { params: { tournamentId } }).then((r) => setCourts(r.data));
@@ -116,9 +118,23 @@ export default function BracketView() {
     loadMatches();
   };
 
-  const addPartner = async (entryId: string, playerId: string) => {
-    await api.patch(`/brackets/entries/${entryId}/substitute`, { slot: "B", newPlayerId: playerId });
-    loadMatches();
+  const replaceEntryPlayer = async (entryId: string, slot: "A" | "B", newPlayerId: string) => {
+    const entry = entries.find((candidate) => candidate.id === entryId);
+    if (!entry) return;
+    const currentPlayerId = slot === "A" ? entry.playerAId : entry.playerBId;
+    const currentName = players.find((player) => player.id === currentPlayerId)?.name ?? "Current player";
+    const replacementName = players.find((player) => player.id === newPlayerId)?.name ?? "Selected player";
+    const duplicateWarning = usedPlayerIds.has(newPlayerId) && newPlayerId !== entry.playerAId && newPlayerId !== entry.playerBId
+      ? " This player is already placed elsewhere in the bracket."
+      : "";
+    if (!window.confirm(`Replace ${currentPlayerId ? currentName : "the open partner spot"} with ${replacementName} in upcoming matches?${duplicateWarning} Completed match results will stay unchanged.`)) return;
+    setActionError(null);
+    try {
+      await api.patch(`/brackets/entries/${entryId}/substitute`, { slot, newPlayerId });
+      loadMatches();
+    } catch (error: any) {
+      setActionError(error?.response?.data?.error || "Could not update this bracket entry.");
+    }
   };
 
   const playerName = (id?: string | null) => players.find((p) => p.id === id)?.name ?? "Unknown";
@@ -160,20 +176,29 @@ export default function BracketView() {
         <div className={`flex items-center justify-between gap-2 py-1 ${isWinner ? "text-ball font-semibold" : ""}`}>
           <span className="truncate">{label}</span>
           <div className="flex items-center gap-1 shrink-0">
-            {canEdit && entry && !entry.playerBId && (
-              <select
-                value=""
-                onChange={(e) => e.target.value && addPartner(entry.id, e.target.value)}
-                className="text-[10px] bg-white/5 border border-white/10 rounded px-1 py-0.5"
-                title="Add doubles partner"
-              >
-                <option value="">+ partner</option>
-                {players.filter((p) => p.id !== entry.playerAId).map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+            {canEdit && entry && !match.winnerEntryId && !["FINISHED", "IN_PROGRESS", "PAUSED"].includes(match.game?.status ?? "") && (
+              <div className="flex items-center gap-1">
+                <select
+                  value=""
+                  onChange={(event) => event.target.value && replaceEntryPlayer(entry.id, "A", event.target.value)}
+                  className="max-w-[84px] text-[10px] bg-white/5 border border-white/10 rounded px-1 py-0.5"
+                  title="Replace first player"
+                >
+                  <option value="">Swap A</option>
+                  {players.filter((player) => player.id !== entry.playerAId).map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}
+                </select>
+                <select
+                  value=""
+                  onChange={(event) => event.target.value && replaceEntryPlayer(entry.id, "B", event.target.value)}
+                  className="max-w-[84px] text-[10px] bg-white/5 border border-white/10 rounded px-1 py-0.5"
+                  title={entry.playerBId ? "Replace second player" : "Add doubles partner"}
+                >
+                  <option value="">{entry.playerBId ? "Swap B" : "+ partner"}</option>
+                  {players.filter((player) => player.id !== entry.playerAId && player.id !== entry.playerBId).map((player) => <option key={player.id} value={player.id}>{player.name}</option>)}
+                </select>
+              </div>
             )}
-            {canEdit && !match.winnerEntryId && (
+            {canEdit && !match.winnerEntryId && !["FINISHED", "IN_PROGRESS", "PAUSED"].includes(match.game?.status ?? "") && (
               <button onClick={() => clearSlot(match.id, slot)} className="text-white/30 hover:text-white/70 text-xs px-1">×</button>
             )}
           </div>
@@ -259,7 +284,9 @@ export default function BracketView() {
 
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6">
+      {tournamentId && <TournamentViewsNav tournamentId={tournamentId} />}
       <h2 className="font-display text-2xl font-bold mb-4">Bracket</h2>
+      {actionError && <p role="alert" className="mb-4 rounded-lg border border-red-300/20 bg-red-400/5 p-3 text-sm text-red-200">{actionError}</p>}
       <datalist id="bracket-roster-names">
         {players.map((p) => <option key={p.id} value={p.name} />)}
       </datalist>

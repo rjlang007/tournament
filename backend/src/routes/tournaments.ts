@@ -3,9 +3,10 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { computeLeaderboard, countUnfinishedGames, detectPodiumTies, LeaderboardRow } from "../lib/leaderboard";
 import { broadcastTournamentUpdate } from "../socket";
-import { attachUser, AuthedRequest, canManageTournament } from "../lib/auth";
+import { attachUser, AuthedRequest, canManageTournament, requireAuth } from "../lib/auth";
 import { enqueuePlayer } from "../lib/queue";
 import { recordAudit } from "../lib/audit";
+import { notifyTournamentParticipants } from "../lib/tournamentChanges";
 
 export const tournamentsRouter = Router();
 
@@ -47,6 +48,21 @@ tournamentsRouter.get("/:id/audit", async (req: AuthedRequest, res) => {
   if (!(await canManageTournament(req, req.params.id))) return res.status(403).json({ error: "You can only view audit history for tournaments you own." });
   const logs = await prisma.auditLog.findMany({ where: { tournamentId: req.params.id }, orderBy: { createdAt: "desc" }, take: 500, include: { actor: { select: { username: true } } } });
   res.json(logs);
+});
+
+tournamentsRouter.get("/:id/changes", requireAuth, async (req: AuthedRequest, res) => {
+  const tournament = await prisma.tournament.findUnique({ where: { id: req.params.id }, select: { id: true } });
+  if (!tournament) return res.status(404).json({ error: "Tournament not found." });
+  const isOrganizer = await canManageTournament(req, tournament.id);
+  const isParticipant = await prisma.player.findFirst({ where: { tournamentId: tournament.id, userId: req.userId }, select: { id: true } });
+  if (!isOrganizer && !isParticipant) return res.status(403).json({ error: "Changes are available to this tournament's organizer and players." });
+  const changes = await prisma.auditLog.findMany({
+    where: { tournamentId: tournament.id },
+    orderBy: { createdAt: "desc" },
+    take: 200,
+    include: { actor: { select: { username: true } } },
+  });
+  res.json(changes);
 });
 
 // Repairs orphaned player statuses after a browser/server interruption. It
@@ -131,6 +147,7 @@ tournamentsRouter.patch("/:id/status", async (req: AuthedRequest, res) => {
   if (!["SETUP", "ACTIVE", "COMPLETED"].includes(status)) {
     return res.status(400).json({ error: "invalid status" });
   }
+  if (status === "COMPLETED") return res.status(400).json({ error: "Use the confirmed finalize flow to publish official results." });
   const tournament = await prisma.tournament.update({
     where: { id: req.params.id },
     data: { status },
@@ -140,6 +157,7 @@ tournamentsRouter.patch("/:id/status", async (req: AuthedRequest, res) => {
 
 tournamentsRouter.post("/:id/complete", async (req: AuthedRequest, res) => {
   if (!(await canManageTournament(req, req.params.id))) return res.status(403).json({ error: "You can only finish tournaments you own." });
+  if (req.body?.confirmed !== true) return res.status(400).json({ error: "Explicit confirmation is required to finalize results." });
   const unfinishedGames = await countUnfinishedGames(req.params.id);
   if (unfinishedGames > 0) {
     return res.status(409).json({ error: "Finish or cancel all queued and active games before finalizing.", unfinishedGames });
@@ -151,7 +169,8 @@ tournamentsRouter.post("/:id/complete", async (req: AuthedRequest, res) => {
   });
   if (finalized.count !== 1) return res.status(409).json({ error: "Tournament was finalized by another request." });
   const tournament = await prisma.tournament.findUniqueOrThrow({ where: { id: req.params.id } });
-  await recordAudit(prisma, { tournamentId: tournament.id, actorId: req.userId, action: "TOURNAMENT_FINALIZED", entityType: "Tournament", entityId: tournament.id });
+  await recordAudit(prisma, { tournamentId: tournament.id, actorId: req.userId, action: "TOURNAMENT_FINALIZED", entityType: "Tournament", entityId: tournament.id, details: { summary: "Official results were finalized." } });
+  await notifyTournamentParticipants(tournament.id, "Tournament results finalized", `Official results for ${tournament.name} are now available.`, `/t/${tournament.id}/leaderboard`);
   broadcastTournamentUpdate(tournament.id, "tournament:changed");
   res.json(tournament);
 });
@@ -300,6 +319,7 @@ tournamentsRouter.get("/:id/finalize/check", async (req, res) => {
 //
 tournamentsRouter.post("/:id/finalize", async (req: AuthedRequest, res) => {
   if (!(await canManageTournament(req, req.params.id))) return res.status(403).json({ error: "You can only finish tournaments you own." });
+  if (req.body?.confirmed !== true) return res.status(400).json({ error: "Explicit confirmation is required to finalize results." });
   const unfinishedGames = await countUnfinishedGames(req.params.id);
   if (unfinishedGames > 0) {
     return res.status(409).json({ error: "Finish or cancel all queued and active games before finalizing.", unfinishedGames });
@@ -316,7 +336,8 @@ tournamentsRouter.post("/:id/finalize", async (req: AuthedRequest, res) => {
   });
   if (finalized.count !== 1) return res.status(409).json({ error: "Tournament was finalized by another request." });
   const tournament = await prisma.tournament.findUniqueOrThrow({ where: { id: req.params.id } });
-  await recordAudit(prisma, { tournamentId: tournament.id, actorId: req.userId, action: "TOURNAMENT_FINALIZED", entityType: "Tournament", entityId: tournament.id });
+  await recordAudit(prisma, { tournamentId: tournament.id, actorId: req.userId, action: "TOURNAMENT_FINALIZED", entityType: "Tournament", entityId: tournament.id, details: { summary: "Official results were finalized." } });
+  await notifyTournamentParticipants(tournament.id, "Tournament results finalized", `Official results for ${tournament.name} are now available.`, `/t/${tournament.id}/leaderboard`);
   broadcastTournamentUpdate(tournament.id, "tournament:changed");
   res.json(tournament);
 });

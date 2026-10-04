@@ -28,13 +28,13 @@ export default function TournamentLogin() {
 
   if (showIntro) {
     return (
-      <main className="login-intro" aria-label="Welcome to PADOL PICKLEBALL COURT">
+      <main className="login-intro" aria-label="Welcome to Playwell">
         <div className="login-intro-court" aria-hidden="true" />
         <div className="login-intro-content">
-          <div className="login-intro-kicker">PADOL PICKLEBALL COURT presents</div>
+          <div className="login-intro-kicker">Playwell</div>
           <h1 className="login-intro-title">Welcome to the court.</h1>
           <div className="login-intro-rule" aria-hidden="true" />
-          <p className="login-intro-subtitle">Your next game starts here.</p>
+          <p className="login-intro-subtitle">Find a game. Bring the fun.</p>
           <p className="login-intro-credit">By Engr. RJO Productions</p>
         </div>
       </main>
@@ -54,7 +54,7 @@ export default function TournamentLogin() {
       <div className="flex-1">
         <div className="glass-panel mx-auto max-w-md p-8">
         <div className="mb-8">
-          <div className="text-[10px] uppercase tracking-[0.28em] text-ball/80">PADOL PICKLEBALL COURT access</div>
+          <div className="text-[10px] uppercase tracking-[0.28em] text-ball/80">Playwell · Find a game. Bring the fun.</div>
           <h1 className="mt-2 font-display text-4xl font-bold text-white">Sign in to play</h1>
           <p className="mt-3 text-sm leading-6 text-white/60">Players can follow their games and standings. Administrators can run the tournament.</p>
         </div>
