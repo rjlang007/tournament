@@ -31,7 +31,7 @@ export default function CommunityShell() {
             <NavLink to="/community/members" className={linkClass}>
               Members
             </NavLink>
-            <span className="nav-pill">Notifications{unread > 0 ? ` (${unread})` : ""}</span>
+            <NavLink to="/community/notifications" className={linkClass}>Notifications{unread > 0 ? ` (${unread})` : ""}</NavLink>
           </>
         )}
         <div className="ml-0 flex w-full items-center gap-2 sm:ml-auto sm:w-auto sm:gap-3">

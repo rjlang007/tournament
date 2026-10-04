@@ -23,6 +23,7 @@ import CreatePost from "./pages/community/CreatePost";
 import PostDetail from "./pages/community/PostDetail";
 import Profile from "./pages/community/Profile";
 import Members from "./pages/community/Members";
+import Notifications from "./pages/community/Notifications";
 import CommunityLogin from "./pages/community/Login";
 import { Privacy, Terms } from "./pages/Legal";
 
@@ -118,6 +119,7 @@ export default function App() {
         <Route path=":postId" element={<PostDetail />} />
         <Route path="profile/:username" element={<Profile />} />
         <Route path="members" element={<Members />} />
+        <Route path="notifications" element={user ? <Notifications /> : <Navigate to="/community/login" replace />} />
       </Route>
       <Route path="/platform" element={user?.role === "SUPERADMIN" ? <PlatformAdmin /> : <Navigate to="/" replace />} />
       <Route path="/" element={<TournamentSetup />} />

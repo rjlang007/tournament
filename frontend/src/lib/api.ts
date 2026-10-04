@@ -91,11 +91,19 @@ export type PostDetail = {
   host: PostHost;
   isOwner: boolean;
   photos: { id: string; url: string; uploadedAt: string }[];
+  participants: {
+    id: string;
+    name: string;
+    status: "PENDING" | "APPROVED" | "INVITED";
+    division?: string | null;
+    addedBy: string | null;
+  }[];
   registrationCount: number;
   myRegistration?: {
+    id: string;
     answers: Record<string, string>;
     submittedAt: string;
-    status: "PENDING" | "APPROVED" | "REJECTED";
+    status: "PENDING" | "APPROVED" | "REJECTED" | "INVITED";
     applicantName: string;
     skillLevel: SkillLevel;
     hasPaymentProof: boolean;

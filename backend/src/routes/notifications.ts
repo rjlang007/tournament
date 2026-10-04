@@ -15,3 +15,8 @@ notificationsRouter.patch("/:id/read", async (req: AuthedRequest, res) => {
   if (notification.count !== 1) return res.status(404).json({ error: "Notification not found." });
   res.json({ ok: true });
 });
+
+notificationsRouter.patch("/read-all", async (req: AuthedRequest, res) => {
+  const updated = await prisma.notification.updateMany({ where: { userId: req.userId, readAt: null }, data: { readAt: new Date() } });
+  res.json({ updated: updated.count });
+});

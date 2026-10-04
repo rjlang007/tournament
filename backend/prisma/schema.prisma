@@ -6,6 +6,7 @@ enum RegistrationStatus {
   PENDING
   APPROVED
   REJECTED
+  INVITED
 }
 
 datasource db {
@@ -93,6 +94,7 @@ model User {
   gameResultHistory GameResultHistory[]
   tournamentPosts  TournamentPost[]
   registrations    RegistrationSubmission[]
+  participantRegistrations RegistrationSubmission[] @relation("RegistrationParticipant")
   notifications    Notification[]
 }
 
@@ -103,6 +105,7 @@ model Notification {
   type      String
   title     String
   message   String
+  actionUrl String?
   readAt    DateTime?
   createdAt DateTime @default(now())
 
@@ -148,6 +151,8 @@ model TournamentPhoto {
   post       TournamentPost @relation(fields: [postId], references: [id], onDelete: Cascade)
   url        String
   storedFile String
+  data       Bytes?
+  mimeType   String?
   uploadedAt DateTime @default(now())
 
   @@index([postId])
@@ -167,12 +172,15 @@ model RegistrationSubmission {
   status      RegistrationStatus @default(PENDING)
   applicantName String
   skillLevel  SkillLevel
+  participantUserId String?
+  participantUser User? @relation("RegistrationParticipant", fields: [participantUserId], references: [id], onDelete: SetNull)
   contact     String?
   division    String?
   paymentMethod String?
   paymentProofUrl String?
   paymentProofStoredFile String?
-  @@unique([postId, userId])
+  @@unique([postId, participantUserId])
+  @@index([postId, userId])
   @@index([postId, status])
 }
 

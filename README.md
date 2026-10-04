@@ -98,9 +98,11 @@ Replace `Postgres` with the exact name of the Railway PostgreSQL service if it
 has a different name. Railway runs `prisma migrate deploy` before starting the
 server. The health check is `GET /health`.
 
-Create a Railway volume mounted at `/app/backend/uploads` if uploaded avatars
-and tournament photos must survive redeploys. Without that volume, the app
-still works but uploaded files are ephemeral.
+Create a Railway volume mounted at `/app/backend/uploads` to persist uploaded
+avatars, tournament photos, payment QR codes, and payment receipts across
+redeploys. Without that volume, disk-stored uploads are ephemeral. New event
+photos are also stored in PostgreSQL; the volume preserves other uploads and
+supports photos created before database-backed storage was added.
 
 After deployment, open the generated app domain and confirm `/health` returns
 `{"ok":true}`. The frontend, API, cookies, and Socket.IO updates all use that
