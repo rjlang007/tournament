@@ -97,13 +97,13 @@ postsRouter.get("/", attachUser, async (_req, res) => {
   });
   const registrationCounts = await prisma.registrationSubmission.groupBy({
     by: ["postId"],
-    where: { postId: { in: posts.map((post) => post.id) }, status: { in: ["PENDING", "APPROVED", "INVITED"] } },
+    where: { postId: { in: posts.map((post) => post.id) }, status: { in: ["PENDING", "APPROVED", "INVITED", "RESERVED"] } },
     _count: { _all: true },
   });
   const countsByPost = new Map(registrationCounts.map((row) => [row.postId, row._count._all]));
   const divisionCounts = await prisma.registrationSubmission.groupBy({
     by: ["postId", "division"],
-    where: { postId: { in: posts.map((post) => post.id) }, status: { in: ["PENDING", "APPROVED", "INVITED"] } },
+    where: { postId: { in: posts.map((post) => post.id) }, status: { in: ["PENDING", "APPROVED", "INVITED", "RESERVED"] } },
     _count: { _all: true },
   });
   const countsByDivision = new Map(divisionCounts.map((row) => [`${row.postId}:${row.division ?? ""}`, row._count._all]));
@@ -148,11 +148,11 @@ postsRouter.get("/:id", attachUser, async (req: AuthedRequest, res) => {
   });
   if (!post) return res.status(404).json({ error: "Tournament post not found." });
   const registrationCount = await prisma.registrationSubmission.count({
-    where: { postId: post.id, status: { in: ["PENDING", "APPROVED", "INVITED"] } },
+    where: { postId: post.id, status: { in: ["PENDING", "APPROVED", "INVITED", "RESERVED"] } },
   });
   const divisionCounts = await prisma.registrationSubmission.groupBy({
     by: ["division"],
-    where: { postId: post.id, status: { in: ["PENDING", "APPROVED", "INVITED"] } },
+    where: { postId: post.id, status: { in: ["PENDING", "APPROVED", "INVITED", "RESERVED"] } },
     _count: { _all: true },
   });
   const countsByDivision = new Map(divisionCounts.map((row) => [row.division ?? "", row._count._all]));
@@ -163,7 +163,7 @@ postsRouter.get("/:id", attachUser, async (req: AuthedRequest, res) => {
     })
     : null;
   const participants = await prisma.registrationSubmission.findMany({
-    where: { postId: post.id, status: { in: ["PENDING", "APPROVED", "INVITED"] } },
+    where: { postId: post.id, status: { in: ["PENDING", "APPROVED", "INVITED", "RESERVED"] } },
     orderBy: { submittedAt: "asc" },
     include: { user: { select: { username: true } }, participantUser: { select: { username: true } } },
   });
@@ -200,6 +200,7 @@ postsRouter.get("/:id", attachUser, async (req: AuthedRequest, res) => {
       name: participant.applicantName,
       status: participant.status,
       division: participant.division,
+      isPlusOne: participant.participantUserId === null,
       addedBy: participant.participantUserId === participant.userId ? null : participant.user.username,
     })),
     registrationCount,
@@ -321,7 +322,7 @@ postsRouter.patch("/:id", attachUser, requireAuth, async (req: AuthedRequest, re
     await tx.$queryRaw`SELECT "id" FROM "TournamentPost" WHERE "id" = ${post.id} FOR UPDATE`;
     if (capacity !== undefined && capacity !== null) {
       const activeCount = await tx.registrationSubmission.count({
-        where: { postId: post.id, status: { in: ["PENDING", "APPROVED", "INVITED"] } },
+        where: { postId: post.id, status: { in: ["PENDING", "APPROVED", "INVITED", "RESERVED"] } },
       });
       if (capacity < activeCount) return { capacityConflict: true as const };
     }
@@ -530,13 +531,13 @@ postsRouter.post("/:id/register", attachUser, requireAuth, async (req: AuthedReq
     if (existing && existing.status !== "REJECTED") return { kind: "already-registered" as const };
 
     const activeCount = await tx.registrationSubmission.count({
-      where: { postId: post.id, status: { in: ["PENDING", "APPROVED", "INVITED"] } },
+      where: { postId: post.id, status: { in: ["PENDING", "APPROVED", "INVITED", "RESERVED"] } },
     });
     if (post.capacity !== null && activeCount >= post.capacity) return { kind: "full" as const };
     const selectedDivision = divisions.find((eventDivision) => eventDivision.name === division);
     if (selectedDivision) {
       const divisionCount = await tx.registrationSubmission.count({
-        where: { postId: post.id, division, status: { in: ["PENDING", "APPROVED", "INVITED"] } },
+        where: { postId: post.id, division, status: { in: ["PENDING", "APPROVED", "INVITED", "RESERVED"] } },
       });
       if (divisionCount >= selectedDivision.capacity) return { kind: "division-full" as const };
     }
@@ -638,7 +639,7 @@ postsRouter.patch("/:id/submissions/:submissionId", attachUser, requireAuth, asy
   const post = await prisma.tournamentPost.findUnique({ where: { id: req.params.id } });
   if (!post || post.hostId !== req.userId) return res.status(403).json({ error: "Only the tournament admin can review requests." });
   const status = req.body?.status;
-  if (!["APPROVED", "REJECTED"].includes(status)) return res.status(400).json({ error: "Invalid review status." });
+  if (!["APPROVED", "REJECTED", "RESERVED", "PENDING"].includes(status)) return res.status(400).json({ error: "Invalid review status." });
   const submission = await prisma.registrationSubmission.findUnique({ where: { id: req.params.submissionId } });
   if (!submission || submission.postId !== post.id) return res.status(404).json({ error: "Registration request not found." });
   if (!post.tournamentId) return res.status(400).json({ error: "This post is not linked to a tournament." });
@@ -657,7 +658,14 @@ postsRouter.patch("/:id/submissions/:submissionId", attachUser, requireAuth, asy
       playerId = player.id;
     }
     const notificationUserId = submission.participantUserId ?? submission.userId;
-    await tx.notification.create({ data: { userId: notificationUserId, type: `REGISTRATION_${status}`, title: `Event request ${status.toLowerCase()}`, message: status === "APPROVED" ? `Your registration for ${post.title} is confirmed.` : `Your registration request for ${post.title} was not approved. Contact the event organizer for details.`, actionUrl: `/community/${post.id}` } });
+    const message = status === "APPROVED"
+      ? `Your registration for ${post.title} is confirmed.`
+      : status === "RESERVED"
+        ? `A place for ${submission.applicantName} has been reserved at ${post.title}.`
+        : status === "PENDING"
+          ? `Your registration for ${post.title} is back on the waitlist.`
+          : `Your registration request for ${post.title} was not approved. Contact the event organizer for details.`;
+    await tx.notification.create({ data: { userId: notificationUserId, type: `REGISTRATION_${status}`, title: `Event request ${status.toLowerCase()}`, message, actionUrl: `/community/${post.id}` } });
     return { updated, playerId };
   });
   if (result.playerId) await enqueuePlayer(post.tournamentId!, result.playerId);

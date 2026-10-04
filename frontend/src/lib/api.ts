@@ -94,8 +94,9 @@ export type PostDetail = {
   participants: {
     id: string;
     name: string;
-    status: "PENDING" | "APPROVED" | "INVITED";
+    status: "PENDING" | "APPROVED" | "INVITED" | "RESERVED";
     division?: string | null;
+    isPlusOne: boolean;
     addedBy: string | null;
   }[];
   registrationCount: number;
@@ -103,7 +104,7 @@ export type PostDetail = {
     id: string;
     answers: Record<string, string>;
     submittedAt: string;
-    status: "PENDING" | "APPROVED" | "REJECTED" | "INVITED";
+    status: "PENDING" | "APPROVED" | "REJECTED" | "INVITED" | "RESERVED";
     applicantName: string;
     skillLevel: SkillLevel;
     hasPaymentProof: boolean;

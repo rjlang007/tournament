@@ -7,6 +7,7 @@ enum RegistrationStatus {
   APPROVED
   REJECTED
   INVITED
+  RESERVED
 }
 
 datasource db {

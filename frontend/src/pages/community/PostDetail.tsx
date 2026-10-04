@@ -101,7 +101,7 @@ export default function PostDetail() {
     }
   }
 
-  async function reviewSubmission(id: string, status: "APPROVED" | "REJECTED") {
+  async function reviewSubmission(id: string, status: "APPROVED" | "REJECTED" | "RESERVED" | "PENDING") {
     await api.patch(`/posts/${postId}/submissions/${id}`, { status });
     setSubmissions((rows) => rows.map((row) => row.id === id ? { ...row, status } : row));
     load();
@@ -156,12 +156,18 @@ export default function PostDetail() {
 
   if (error) return <p className="text-advance">{error}</p>;
   if (!post) return <p className="text-white/60">Loading…</p>;
-  const existingActiveRequest = ["PENDING", "APPROVED", "INVITED"].includes(post.myRegistration?.status ?? "");
+  const existingActiveRequest = ["PENDING", "APPROVED", "INVITED", "RESERVED"].includes(post.myRegistration?.status ?? "");
   const isExistingSelf = participantMode === "self" && existingActiveRequest;
   const eventFull = post.capacity != null && post.registrationCount - (isExistingSelf ? 1 : 0) >= post.capacity;
   const selectedDivision = post.divisions.find((item) => item.name === division);
   const divisionOwnRequest = isExistingSelf && post.myRegistration?.division === division;
   const divisionFull = !!selectedDivision && selectedDivision.registered - (divisionOwnRequest ? 1 : 0) >= selectedDivision.capacity;
+  const participantGroups = [
+    { title: "Joined / approved", players: post.participants.filter((participant) => participant.status === "APPROVED") },
+    { title: "Waitlist", players: post.participants.filter((participant) => participant.status === "PENDING" && !participant.isPlusOne) },
+    { title: "Invited / +1", players: post.participants.filter((participant) => participant.status === "INVITED" || (participant.isPlusOne && participant.status !== "APPROVED" && participant.status !== "RESERVED")) },
+    { title: "Reserved", players: post.participants.filter((participant) => participant.status === "RESERVED") },
+  ];
 
   return (
     <div className="max-w-2xl">
@@ -235,17 +241,20 @@ export default function PostDetail() {
         <p className="text-white/80"><span className="text-white/50">Payment options:</span> {post.paymentMethods.map((method) => method === "QR" ? "QR / e-wallet" : "Pay in person").join(" · ")}</p>
       </div>
 
-      {post.participants.length > 0 && <section className="mb-6">
-        <h3 className="font-display font-semibold text-white mb-2">Players</h3>
-        <div className="divide-y divide-white/10 border-y border-white/10">
-          {post.participants.map((participant) => <div key={participant.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
-            <span className="text-white">{participant.name}</span>
-            {participant.division && <span className="text-xs text-white/45">{divisionLabel(participant.division)}</span>}
-            <span className={`text-xs ${participant.status === "APPROVED" ? "text-emerald-300" : participant.status === "INVITED" ? "text-ball" : "text-white/50"}`}>{registrationStatusLabel(participant.status)}</span>
-            {participant.addedBy && <span className="ml-auto text-xs text-white/40">Added by @{participant.addedBy}</span>}
-          </div>)}
-        </div>
-      </section>}
+      <section className="mb-6 space-y-4">
+        {participantGroups.map((group) => <div key={group.title}>
+          <h3 className="mb-1 font-display font-semibold text-white">{group.title} <span className="text-sm font-normal text-white/40">{group.players.length}</span></h3>
+          <div className="divide-y divide-white/10 border-y border-white/10">
+            {group.players.length === 0 ? <p className="py-2 text-xs text-white/35">No players</p> : group.players.map((participant) => <div key={participant.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 py-2 text-sm">
+              <span className="text-white">{participant.name}</span>
+              {participant.isPlusOne && <span className="text-xs text-ball">+1</span>}
+              {participant.division && <span className="text-xs text-white/45">{divisionLabel(participant.division)}</span>}
+              <span className={`text-xs ${participant.status === "APPROVED" ? "text-emerald-300" : participant.status === "INVITED" ? "text-ball" : participant.status === "RESERVED" ? "text-sky-300" : "text-white/50"}`}>{registrationStatusLabel(participant.status)}</span>
+              {participant.addedBy && <span className="ml-auto text-xs text-white/40">Added by @{participant.addedBy}</span>}
+            </div>)}
+          </div>
+        </div>)}
+      </section>
 
       {post.locationLatitude != null && post.locationLongitude != null && <section className="mb-5 space-y-2"><h3 className="font-display font-semibold text-white">Venue map</h3><div className="overflow-hidden rounded-lg border border-white/10"><TournamentLocationMap latitude={post.locationLatitude} longitude={post.locationLongitude} /></div></section>}
 
@@ -317,7 +326,28 @@ export default function PostDetail() {
         </form>
       </div>}
 
-      {post.isOwner && post.tournamentId && <div className="mt-6 rounded-xl border border-white/10 p-4"><h3 className="font-display font-semibold text-white mb-3">Entry requests</h3><div className="space-y-2">{submissions.map((submission) => <div key={submission.id} className="flex flex-wrap items-start justify-between gap-3 rounded-lg bg-white/[0.03] p-3 text-sm"><div className="min-w-0"><div className="text-white">{submission.applicantName} {submission.participantUser && <span className="text-xs text-ball">for @{submission.participantUser.username}</span>} <span className="text-xs text-white/40">added by @{submission.user?.username}</span></div><div className="text-xs text-white/50">{submission.division ? divisionLabel(submission.division) : submission.skillLevel} · {submission.paymentMethod === "QR" ? "QR / e-wallet" : "Pay in person"} · {registrationStatusLabel(submission.status)} · {submission.contact || "No contact provided"} · {new Date(submission.submittedAt).toLocaleString()}</div>{Object.entries(submission.answers ?? {}).map(([label, answer]) => <div key={label} className="mt-1 text-xs text-white/60">{label}: {String(answer)}</div>)}<div className="mt-1 text-xs">{submission.paymentProofStoredFile ? <a className="text-ball" href={`${API_URL}/api/posts/${postId}/submissions/${submission.id}/payment-proof`} target="_blank" rel="noreferrer">View payment proof</a> : <span className="text-white/40">No proof uploaded; verify in person if applicable</span>}</div></div>{submission.status === "PENDING" && <div className="flex shrink-0 gap-2"><button onClick={() => reviewSubmission(submission.id, "APPROVED")} className="secondary-button px-2 py-1 text-xs text-emerald-300">Approve</button><button onClick={() => reviewSubmission(submission.id, "REJECTED")} className="secondary-button px-2 py-1 text-xs text-red-300">Reject</button></div>}</div>)}</div></div>}
+      {post.isOwner && post.tournamentId && <div className="mt-6 rounded-xl border border-white/10 p-4">
+        <h3 className="font-display font-semibold text-white mb-3">Entry requests</h3>
+        <div className="space-y-2">{submissions.map((submission) => <div key={submission.id} className="flex flex-wrap items-start justify-between gap-3 rounded-lg bg-white/[0.03] p-3 text-sm">
+          <div className="min-w-0">
+            <div className="text-white">{submission.applicantName} {submission.participantUser && <span className="text-xs text-ball">for @{submission.participantUser.username}</span>} <span className="text-xs text-white/40">added by @{submission.user?.username}</span></div>
+            <div className="text-xs text-white/50">{submission.division ? divisionLabel(submission.division) : submission.skillLevel} · {submission.paymentMethod === "QR" ? "QR / e-wallet" : "Pay in person"} · {registrationStatusLabel(submission.status)} · {submission.contact || "No contact provided"} · {new Date(submission.submittedAt).toLocaleString()}</div>
+            {Object.entries(submission.answers ?? {}).map(([label, answer]) => <div key={label} className="mt-1 text-xs text-white/60">{label}: {String(answer)}</div>)}
+            <div className="mt-1 text-xs">{submission.paymentProofStoredFile ? <a className="text-ball" href={`${API_URL}/api/posts/${postId}/submissions/${submission.id}/payment-proof`} target="_blank" rel="noreferrer">View payment proof</a> : <span className="text-white/40">No proof uploaded; verify in person if applicable</span>}</div>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            {submission.status === "PENDING" && <>
+              <button onClick={() => reviewSubmission(submission.id, "APPROVED")} className="secondary-button px-2 py-1 text-xs text-emerald-300">Approve</button>
+              <button onClick={() => reviewSubmission(submission.id, "RESERVED")} className="secondary-button px-2 py-1 text-xs text-sky-300">Reserve</button>
+              <button onClick={() => reviewSubmission(submission.id, "REJECTED")} className="secondary-button px-2 py-1 text-xs text-red-300">Reject</button>
+            </>}
+            {submission.status === "RESERVED" && <>
+              <button onClick={() => reviewSubmission(submission.id, "APPROVED")} className="secondary-button px-2 py-1 text-xs text-emerald-300">Approve</button>
+              <button onClick={() => reviewSubmission(submission.id, "PENDING")} className="secondary-button px-2 py-1 text-xs text-white/60">Return to waitlist</button>
+            </>}
+          </div>
+        </div>)}</div>
+      </div>}
     </div>
   );
 }
@@ -330,5 +360,6 @@ function registrationStatusLabel(status: string) {
   if (status === "PENDING") return "Waitlisted";
   if (status === "INVITED") return "Invited";
   if (status === "APPROVED") return "Approved";
+  if (status === "RESERVED") return "Reserved";
   return "Declined";
 }
