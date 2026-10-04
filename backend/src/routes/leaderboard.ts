@@ -1,19 +1,26 @@
 import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { computeLeaderboard } from "../lib/leaderboard";
-import { getPlayerLeaderboard } from "../lib/playerLeaderboard";
+import { getLeaderboardSeasons, getPlayerLeaderboard } from "../lib/playerLeaderboard";
 
 export const leaderboardRouter = Router();
 
 // Player career rankings are based on officially finalized event podiums.
-leaderboardRouter.get("/global", async (_req, res) => {
-  const rows = await getPlayerLeaderboard();
+leaderboardRouter.get("/global", async (req, res) => {
+  const seasonValue = req.query.season;
+  const season = typeof seasonValue === "string" && /^\d{4}$/.test(seasonValue) ? Number(seasonValue) : undefined;
+  if (seasonValue !== undefined && season === undefined) {
+    return res.status(400).json({ error: "season must be a four-digit calendar year." });
+  }
+  const [rows, seasons] = await Promise.all([getPlayerLeaderboard(season), getLeaderboardSeasons()]);
   const byPoints = (points: (row: typeof rows[number]) => number) =>
     [...rows].sort((a, b) =>
       points(b) - points(a) || b.winRate - a.winRate || b.wins - a.wins || a.username.localeCompare(b.username)
     );
 
   res.json({
+    selectedSeason: season ?? null,
+    seasons,
     openPlay: byPoints((row) => row.openPlayPoints),
     tournaments: byPoints((row) => row.tournamentPoints),
     overall: byPoints((row) => row.overallPoints),

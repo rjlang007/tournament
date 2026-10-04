@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, fileUrl, GlobalLeaderboards, PlayerLeaderboardRow } from "../../lib/api";
 
-type BoardKey = keyof GlobalLeaderboards;
+type BoardKey = "openPlay" | "tournaments" | "overall";
 
 const boards: { key: BoardKey; label: string; description: string }[] = [
   { key: "overall", label: "Overall", description: "Combined points from open play and tournaments" },
@@ -19,19 +19,20 @@ function pointsFor(row: PlayerLeaderboardRow, board: BoardKey) {
 export default function CommunityLeaderboard() {
   const [data, setData] = useState<GlobalLeaderboards | null>(null);
   const [activeBoard, setActiveBoard] = useState<BoardKey>("overall");
+  const [season, setSeason] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   function load() {
     setLoading(true);
     setError(null);
-    api.get<GlobalLeaderboards>("/leaderboard/global")
+    api.get<GlobalLeaderboards>("/leaderboard/global", { params: season === null ? {} : { season } })
       .then(({ data: response }) => setData(response))
       .catch(() => setError("Player rankings are temporarily unavailable."))
       .finally(() => setLoading(false));
   }
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [season]);
 
   const selected = boards.find((board) => board.key === activeBoard) ?? boards[0];
   const rows = data?.[activeBoard] ?? [];
@@ -64,6 +65,19 @@ export default function CommunityLeaderboard() {
         ))}
       </div>
 
+      <div className="flex flex-wrap items-center gap-3">
+        <label htmlFor="leaderboard-season" className="text-sm text-white/55">Season</label>
+        <select
+          id="leaderboard-season"
+          value={season ?? ""}
+          onChange={(event) => setSeason(event.target.value ? Number(event.target.value) : null)}
+          className="rounded-lg border border-white/10 bg-neutral-900 px-3 py-2 text-sm text-white"
+        >
+          <option value="">All-time</option>
+          {data?.seasons.map((year) => <option key={year} value={year}>{year}</option>)}
+        </select>
+      </div>
+
       <p className="text-sm text-white/50">{selected.description}</p>
       {error && <div className="rounded-xl border border-red-400/20 bg-red-500/10 p-4 text-sm text-red-200">{error} <button onClick={load} className="ml-2 underline">Retry</button></div>}
       {loading && <p className="text-white/55">Loading player rankings…</p>}
@@ -88,7 +102,7 @@ export default function CommunityLeaderboard() {
                 {row.avatarUrl ? <img src={fileUrl(row.avatarUrl)} alt="" className="h-12 w-12 rounded-full border border-white/15 object-cover" /> : <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 font-display text-xl text-ball">{row.username[0]?.toUpperCase()}</div>}
                 <div className="min-w-0">
                   <div className="truncate font-display text-lg font-bold text-white">{row.username}</div>
-                  <div className="text-xs text-white/45">{row.wins}W – {row.losses}L · {row.winRate}% win rate</div>
+                  <div className="text-xs text-white/45">{row.rankTier} · {row.wins}W – {row.losses}L · {row.winRate}% win rate</div>
                 </div>
               </div>
               <div className="mt-5 font-display text-3xl font-bold text-ball">{pointsFor(row, activeBoard)} <span className="text-sm font-medium text-white/45">pts</span></div>
@@ -105,6 +119,7 @@ export default function CommunityLeaderboard() {
                 <tr>
                   <th className="px-4 py-3">Rank</th>
                   <th className="px-4 py-3">Player</th>
+                  <th className="px-4 py-3">Tier</th>
                   <th className="px-4 py-3 text-center">Points</th>
                   <th className="px-4 py-3 text-center">Podiums</th>
                   <th className="px-4 py-3 text-center">Record</th>
@@ -121,6 +136,7 @@ export default function CommunityLeaderboard() {
                         {row.username}
                       </Link>
                     </td>
+                    <td className="px-4 py-3 text-xs font-semibold text-ball">{row.rankTier}</td>
                     <td className="px-4 py-3 text-center font-bold text-ball">{pointsFor(row, activeBoard)}</td>
                     <td className="px-4 py-3 text-center text-white/70">{row.podiums}</td>
                     <td className="px-4 py-3 text-center text-white/70">{row.wins}W – {row.losses}L</td>

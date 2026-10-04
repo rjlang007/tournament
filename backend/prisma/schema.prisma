@@ -105,11 +105,12 @@ model ProfileVisit {
   id        String   @id @default(uuid())
   profileId String
   profile   User     @relation("ProfileVisitProfile", fields: [profileId], references: [id], onDelete: Cascade)
-  visitorId String
-  visitor   User     @relation("ProfileVisitVisitor", fields: [visitorId], references: [id], onDelete: Cascade)
+  visitorId String?
+  visitor   User?    @relation("ProfileVisitVisitor", fields: [visitorId], references: [id], onDelete: Cascade)
+  visitorKey String
   visitedAt DateTime @default(now())
 
-  @@unique([profileId, visitorId])
+  @@unique([profileId, visitorKey])
   @@index([profileId, visitedAt])
 }
 

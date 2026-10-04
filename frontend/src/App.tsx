@@ -106,6 +106,7 @@ function Shell() {
 
 export default function App() {
   const { user, loading } = useAuth();
+  const location = useLocation();
   if (loading) return <div className="min-h-screen p-10 text-center text-white/60">Loading account...</div>;
 
   return (
@@ -122,7 +123,7 @@ export default function App() {
         <Route path="leaderboard" element={<CommunityLeaderboard />} />
         <Route path=":postId/edit" element={<CreatePost />} />
         <Route path=":postId" element={<PostDetail />} />
-        <Route path="profile/:username" element={<Profile />} />
+        <Route path="profile/:username" element={user ? <Profile /> : <Navigate to="/community/login" state={{ from: location.pathname }} replace />} />
         <Route path="members" element={<Members />} />
         <Route path="notifications" element={user ? <Notifications /> : <Navigate to="/community/login" replace />} />
       </Route>

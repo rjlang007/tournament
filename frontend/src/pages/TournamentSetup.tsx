@@ -26,7 +26,7 @@ export default function TournamentSetup() {
   if (user?.role === "PLAYER" || !user) {
     return <>
       <PublicEventListings />
-      <PlayerTournamentDirectory tournaments={tournaments} joined={joined} canJoin={!!user} onJoin={joinTournament} onOpen={(id) => navigate(`/t/${id}/kiosk`)} />
+      <PlayerTournamentDirectory tournaments={tournaments.filter((tournament) => tournament.status !== "COMPLETED")} joined={joined} canJoin={!!user} onJoin={joinTournament} onOpen={(id) => navigate(`/t/${id}/kiosk`)} />
     </>;
   }
 

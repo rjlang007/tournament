@@ -105,7 +105,10 @@ export default function Profile() {
               <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-ball">Career stats</p>
               <h2 className="mt-1 font-display text-xl font-bold text-white">Player performance</h2>
             </div>
-            <Link to="/community/leaderboard" className="text-xs font-semibold text-white/50 hover:text-ball">View rankings →</Link>
+            <div className="flex items-center gap-3">
+              <span className="rounded-full border border-ball/30 bg-ball/10 px-3 py-1 text-xs font-bold text-ball">{profile.playerStats.rankTier}</span>
+              <Link to="/community/leaderboard" className="text-xs font-semibold text-white/50 hover:text-ball">View rankings →</Link>
+            </div>
           </div>
           <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
             <StatCard label="Overall points" value={profile.playerStats.overallPoints} highlight />
@@ -118,6 +121,44 @@ export default function Profile() {
             <StatCard label="Podiums" value={profile.playerStats.podiums} />
           </div>
           <p className="mt-4 text-xs text-white/40">Played in {profile.playerStats.eventsPlayed} event{profile.playerStats.eventsPlayed === 1 ? "" : "s"}.</p>
+          {profile.playerStats.badges.length > 0 && (
+            <div className="mt-4">
+              <p className="mb-2 text-[10px] uppercase tracking-[0.18em] text-white/40">Badges</p>
+              <div className="flex flex-wrap gap-2">
+                {profile.playerStats.badges.map((badge) => <span key={badge} className="rounded-full border border-ball/20 bg-ball/5 px-3 py-1.5 text-xs font-semibold text-ball">✦ {badge}</span>)}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {!!profile.matchHistory?.length && (
+        <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-5 sm:p-6">
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.24em] text-ball">Recent matches</p>
+              <h2 className="mt-1 font-display text-xl font-bold text-white">Match history</h2>
+            </div>
+            <span className="text-xs text-white/40">Latest {profile.matchHistory.length}</span>
+          </div>
+          <div className="mt-4 space-y-2">
+            {profile.matchHistory.map((match) => (
+              <article key={match.id} className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/5 bg-black/20 p-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className={`text-xs font-bold ${match.result === "WIN" ? "text-emerald-300" : "text-red-300"}`}>{match.result}</span>
+                    <span className="truncate text-sm font-semibold text-white">{match.tournamentName}</span>
+                    <span className="text-[10px] uppercase text-white/35">{match.tournamentType === "RANDOM_PAIRING" ? "Open play" : "Tournament"}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-white/45">
+                    {match.teammates.length ? `With ${match.teammates.join(", ")} · ` : ""}
+                    vs {match.opponents.join(", ")} · {new Date(match.playedAt).toLocaleDateString()}
+                  </p>
+                </div>
+                <div className="font-display text-lg font-bold text-white">{match.ownScore ?? "—"} <span className="text-white/35">:</span> {match.opponentScore ?? "—"}</div>
+              </article>
+            ))}
+          </div>
         </section>
       )}
 
@@ -205,13 +246,15 @@ export default function Profile() {
           {profile.visitors?.length ? (
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               {profile.visitors.map((visitor) => (
-                <Link key={visitor.id} to={`/community/profile/${encodeURIComponent(visitor.username)}`} className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.03] p-3 hover:border-ball/30">
-                  <img src={fileUrl(visitor.avatarUrl)} alt="" className="h-10 w-10 rounded-full border border-white/10 object-cover" />
+                <div key={visitor.id ?? visitor.visitedAt} className="flex items-center gap-3 rounded-xl border border-white/5 bg-white/[0.03] p-3">
+                  {visitor.avatarUrl ? <img src={fileUrl(visitor.avatarUrl)} alt="" className="h-10 w-10 rounded-full border border-white/10 object-cover" /> : <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-sm text-ball">?</div>}
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-semibold text-white">{visitor.username}</p>
+                    {visitor.username
+                      ? <Link to={`/community/profile/${encodeURIComponent(visitor.username)}`} className="truncate text-sm font-semibold text-white hover:text-ball">{visitor.username}</Link>
+                      : <p className="truncate text-sm font-semibold text-white">Anonymous visitor</p>}
                     <p className="text-xs text-white/40">Visited {new Date(visitor.visitedAt).toLocaleString()}</p>
                   </div>
-                </Link>
+                </div>
               ))}
             </div>
           ) : <p className="mt-4 text-sm text-white/45">Your visitors will appear here when they view your profile.</p>}

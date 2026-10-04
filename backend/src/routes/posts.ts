@@ -84,15 +84,23 @@ postsRouter.get("/", attachUser, async (_req, res) => {
   const { search, location, amount } = _req.query as { search?: string; location?: string; amount?: string };
   const posts = await prisma.tournamentPost.findMany({
     where: {
-      ...(search ? { OR: [{ title: { contains: search, mode: "insensitive" } }, { description: { contains: search, mode: "insensitive" } }] } : {}),
-      ...(location ? { location: { contains: location, mode: "insensitive" } } : {}),
-      ...(amount ? { amount: { contains: amount, mode: "insensitive" } } : {}),
+      AND: [
+        {
+          OR: [
+            { tournamentId: null },
+            { tournament: { is: { status: { not: "COMPLETED" } } } },
+          ],
+        },
+        ...(search ? [{ OR: [{ title: { contains: search, mode: "insensitive" as const } }, { description: { contains: search, mode: "insensitive" as const } }] }] : []),
+        ...(location ? [{ location: { contains: location, mode: "insensitive" as const } }] : []),
+        ...(amount ? [{ amount: { contains: amount, mode: "insensitive" as const } }] : []),
+      ],
     },
     orderBy: { createdAt: "desc" },
     include: {
       host: true,
       photos: { orderBy: { uploadedAt: "asc" } },
-      tournament: { select: { scheduledStart: true, scheduledEnd: true, locationAddress: true, locationLatitude: true, locationLongitude: true } },
+      tournament: { select: { status: true, scheduledStart: true, scheduledEnd: true, locationAddress: true, locationLatitude: true, locationLongitude: true } },
     },
   });
   const registrationCounts = await prisma.registrationSubmission.groupBy({

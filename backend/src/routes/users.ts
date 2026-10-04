@@ -6,7 +6,7 @@ import { prisma } from "../lib/prisma";
 import { attachUser, requireAuth, AuthedRequest } from "../lib/auth";
 import { uploadAvatar, AVATAR_DIR } from "../lib/uploads";
 import { defaultAvatarUrl, isDefaultAvatarKey, DEFAULT_AVATAR_KEYS } from "../lib/defaultAvatars";
-import { getPlayerStats } from "../lib/playerLeaderboard";
+import { getPlayerMatchHistory, getPlayerStats } from "../lib/playerLeaderboard";
 
 export const usersRouter = Router();
 
@@ -38,20 +38,23 @@ usersRouter.get("/default-avatars", attachUser, requireAuth, (_req, res) => {
   res.json(DEFAULT_AVATAR_KEYS.map((key) => ({ key, url: defaultAvatarUrl(key) })));
 });
 
-usersRouter.get("/:username", attachUser, requireAuth, async (req, res) => {
+usersRouter.get("/:username", attachUser, requireAuth, async (req: AuthedRequest, res) => {
   const user = await prisma.user.findUnique({ where: { username: req.params.username } });
   if (!user) return res.status(404).json({ error: "User not found." });
-  const viewerId = (req as AuthedRequest).userId;
-  if (viewerId && viewerId !== user.id) {
+  const viewerId = req.userId!;
+
+  if (viewerId !== user.id) {
+    const visitorKey = `user:${viewerId}`;
     await prisma.profileVisit.upsert({
-      where: { profileId_visitorId: { profileId: user.id, visitorId: viewerId } },
-      create: { profileId: user.id, visitorId: viewerId },
+      where: { profileId_visitorKey: { profileId: user.id, visitorKey } },
+      create: { profileId: user.id, visitorId: viewerId, visitorKey },
       update: { visitedAt: new Date() },
     });
   }
 
-  const [playerStats, visits] = await Promise.all([
+  const [playerStats, matchHistory, visits] = await Promise.all([
     getPlayerStats(user.id),
+    getPlayerMatchHistory(user.id),
     viewerId === user.id
       ? prisma.profileVisit.findMany({
           where: { profileId: user.id },
@@ -64,11 +67,13 @@ usersRouter.get("/:username", attachUser, requireAuth, async (req, res) => {
   res.json({
     ...toPublicProfile(user),
     playerStats,
+    matchHistory,
     ...(visits ? {
       visitors: visits.map(({ visitor, visitedAt }) => ({
-        id: visitor.id,
-        username: visitor.username,
-        avatarUrl: visitor.avatarUrl ?? defaultAvatarUrl(visitor.defaultAvatarKey as any),
+        id: visitor?.id ?? null,
+        username: visitor?.username ?? null,
+        avatarUrl: visitor ? visitor.avatarUrl ?? defaultAvatarUrl(visitor.defaultAvatarKey as any) : null,
+        anonymous: !visitor,
         visitedAt,
       })),
     } : {}),

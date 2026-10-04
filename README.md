@@ -145,11 +145,22 @@ validly matched this round stays in the queue for the next draw.
 - `backend/src/lib/queue.ts` — fills the "next 4-6 games" preview, seats free courts
 - `backend/src/lib/bracket.ts` — single-elimination bracket generation + winner advancement
 - `backend/src/lib/leaderboard.ts` — wins/losses/games-played standings
+- `backend/src/lib/playerLeaderboard.ts` — career and calendar-year podium points, player stats, tiers, badges, and match history
+- `backend/src/routes/users.ts` — public player profiles and unique profile-visitor history
 - `backend/src/index.ts` — server-side 1-second timer tick, broadcasts to all clients
 - `frontend/src/pages/CourtControl.tsx` — staff screen (start/pause/finish, timers, draw button)
 - `frontend/src/pages/Kiosk.tsx` — public read-only live board
 - `frontend/src/pages/Leaderboard.tsx` — public read-only leaderboard
+- `frontend/src/pages/community/CommunityLeaderboard.tsx` — global open-play, tournament, and overall rankings
+- `frontend/src/pages/community/Profile.tsx` — player stats, recent matches, badges, and profile visitors
 - `frontend/src/components/SpinWheel.tsx` — the reveal animation
+
+Global leaderboard seasons use calendar years based on each event's finalization
+date. Viewing player profiles and recording profile visits require a signed-in
+account; logged-out profile requests are redirected to community sign-in.
+Historical visits that were recorded anonymously before this restriction remain
+displayed without identifying information. Deploy pending Prisma migrations
+before releasing profile visitor changes.
 
 ## Production notes
 - Keep `JWT_SECRET`, `DATABASE_URL`, and `CORS_ORIGIN` configured in the deployment

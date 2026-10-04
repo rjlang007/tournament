@@ -28,13 +28,27 @@ export type PublicProfile = {
   memberSince?: string | Date;
   playerStats?: PlayerLeaderboardRow;
   visitors?: ProfileVisitor[];
+  matchHistory?: PlayerMatchHistory[];
 };
 
 export type ProfileVisitor = {
-  id: string;
-  username: string;
-  avatarUrl: string;
+  id: string | null;
+  username: string | null;
+  avatarUrl: string | null;
+  anonymous: boolean;
   visitedAt: string;
+};
+
+export type PlayerMatchHistory = {
+  id: string;
+  tournamentName: string;
+  tournamentType: "RANDOM_PAIRING" | "FIXED_BRACKET";
+  playedAt: string;
+  result: "WIN" | "LOSS";
+  ownScore: number | null;
+  opponentScore: number | null;
+  teammates: string[];
+  opponents: string[];
 };
 
 export type PlayerLeaderboardRow = {
@@ -50,9 +64,14 @@ export type PlayerLeaderboardRow = {
   winRate: number;
   podiums: number;
   eventsPlayed: number;
+  championships: number;
+  rankTier: string;
+  badges: string[];
 };
 
 export type GlobalLeaderboards = {
+  selectedSeason: number | null;
+  seasons: number[];
   openPlay: PlayerLeaderboardRow[];
   tournaments: PlayerLeaderboardRow[];
   overall: PlayerLeaderboardRow[];

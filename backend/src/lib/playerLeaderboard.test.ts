@@ -89,3 +89,35 @@ test("does not award points from standings that are not finalized", () => {
   assert.equal(row.wins, 1);
   assert.equal(row.losses, 1);
 });
+
+test("seasonal points include only podiums finalized in that calendar year", () => {
+  const previousSeason = account("seasonal-player", "RANDOM_PAIRING", 1, new Date("2025-11-12T00:00:00Z"));
+  const currentSeason = account("seasonal-player", "FIXED_BRACKET", 1, new Date("2026-02-12T00:00:00Z"));
+  currentSeason.playerProfiles[0].id = "2026-profile";
+  currentSeason.playerProfiles[0].tournament.finalStandings = [{ playerId: "2026-profile" }];
+  const result = buildPlayerLeaderboard([{
+    ...previousSeason,
+    playerProfiles: [...previousSeason.playerProfiles, ...currentSeason.playerProfiles],
+  }], 2026)[0];
+
+  assert.equal(result.openPlayPoints, 0);
+  assert.equal(result.tournamentPoints, 6);
+  assert.equal(result.overallPoints, 6);
+  assert.equal(result.wins, 1);
+  assert.equal(result.losses, 1);
+  assert.equal(result.gamesPlayed, 2);
+  assert.equal(result.eventsPlayed, 1);
+  assert.equal(result.podiums, 1);
+});
+
+test("assigns a rank tier and achievement badges from career results", () => {
+  const player = account("badge-player", "RANDOM_PAIRING", 1);
+  player.playerProfiles[0].gamePlayers = Array.from({ length: 20 }, (_, index) => ({
+    team: "A" as const,
+    game: { winningTeam: index < 16 ? "A" as const : "B" as const },
+  }));
+  const result = buildPlayerLeaderboard([player])[0];
+
+  assert.equal(result.rankTier, "Rookie");
+  assert.deepEqual(result.badges, ["Champion", "First podium", "Match winner", "Win-rate ace"]);
+});
